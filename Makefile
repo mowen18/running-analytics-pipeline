@@ -1,8 +1,8 @@
-# Phase 0 targets only. Sync/dbt/app targets arrive with their phases.
+# Phase 0–1 targets. Weather/dbt/app targets arrive with their phases.
 
 VENV := .venv/bin
 
-.PHONY: help up down bootstrap athlete authorize test lint format
+.PHONY: help up down bootstrap athlete authorize sync-activities reconcile test lint format
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | sed 's/:.*//' | sort
@@ -25,6 +25,12 @@ athlete:       ## print the authenticated athlete profile
 
 authorize:     ## one-time Strava browser authorization
 	$(VENV)/running-pipeline authorize
+
+sync-activities:   ## incremental Strava activity sync (14-day overlap window)
+	$(VENV)/running-pipeline sync-activities
+
+reconcile:     ## full reconciliation: re-fetch everything from SYNC_START_DATE
+	$(VENV)/running-pipeline sync-activities --full
 
 test:
 	$(VENV)/pytest

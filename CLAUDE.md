@@ -6,7 +6,7 @@
   one, stop and ask — do not silently deviate.
 
 ## Current status
-- Phase 0 is complete. Phase 1 is next
+- Phases 0–1 are complete. Phase 2 (weather ingestion) is next
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
@@ -17,11 +17,16 @@
 
 ## Commands
 - Activate the venv first: `source .venv/bin/activate` (Python 3.13)
-- Test:    `make test`    (pytest; all external HTTP mocked)
+- Test:    `make test`    (pytest; all external HTTP mocked; DB-integration
+  tests run against a scratch database and skip visibly when Postgres is down)
 - Lint:    `make lint`    (ruff check src tests)
 - Format:  `make format`  (ruff format src tests)
 - DB:      `make up` / `make down` / `make bootstrap`
-- CLI:     `running-pipeline athlete` / `running-pipeline authorize`
+- Sync:    `make sync-activities` (incremental) / `make reconcile` (full)
+- CLI:     `running-pipeline athlete` / `running-pipeline authorize` /
+  `running-pipeline sync-activities [--full]`
+- Sync watermark lives in raw_strava.sync_state (last successful run's UTC
+  start time); it advances only after a fully successful sync
 - Rotated Strava tokens live in `.secrets/strava_tokens.json` (gitignored,
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.

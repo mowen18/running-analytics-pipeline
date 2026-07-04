@@ -1,13 +1,22 @@
 """Command-line interface. Never prints or logs token values."""
 
+import logging
 import sys
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import click
+import psycopg
 
+from running_pipeline import activity_ingestion
 from running_pipeline.config import load_settings
-from running_pipeline.strava_client import DEFAULT_SCOPE, StravaAuthError, StravaClient
+from running_pipeline.database import get_connection
+from running_pipeline.strava_client import (
+    DEFAULT_SCOPE,
+    StravaApiError,
+    StravaAuthError,
+    StravaClient,
+)
 
 
 @click.group()
@@ -38,6 +47,46 @@ def athlete():
     click.echo(f"Created:     {profile.get('created_at') or '<unknown>'}")
     click.echo(f"Followers:   {profile.get('follower_count', '<hidden>')}")
     click.echo(f"Following:   {profile.get('friend_count', '<hidden>')}")
+
+
+@cli.command("sync-activities")
+@click.option(
+    "--full",
+    is_flag=True,
+    help="Full reconciliation: re-fetch everything from SYNC_START_DATE, ignoring the watermark.",
+)
+def sync_activities(full: bool):
+    """Sync Strava activities into raw_strava.activities (idempotent)."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stderr,
+    )
+    settings = load_settings()
+    client = StravaClient(settings)
+    try:
+        with get_connection(settings) as conn:
+            report = activity_ingestion.sync_activities(settings, client, conn, full=full)
+    except StravaAuthError as exc:
+        raise click.ClickException(
+            f"{exc}\nIf the refresh token is invalid or under-scoped, run "
+            "`running-pipeline authorize` to re-authorize."
+        ) from exc
+    except StravaApiError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except psycopg.OperationalError as exc:
+        raise click.ClickException(
+            f"Could not reach Postgres: {exc}\nStart it with `make up`."
+        ) from exc
+
+    outcome = "stopped early at the rate limit" if report.stopped_early else "complete"
+    click.echo(
+        f"Sync {outcome}: pages={report.pages} received={report.received} "
+        f"inserted={report.inserted} updated={report.updated} skipped={report.skipped}"
+    )
+    if report.stopped_early:
+        click.echo("Committed pages were kept; re-run later to finish.")
+        sys.exit(3)
 
 
 @cli.command()
