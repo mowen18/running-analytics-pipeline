@@ -13,9 +13,12 @@ up:            ## start Postgres (healthcheck-gated)
 down:          ## stop Postgres (data volume preserved)
 	docker compose down
 
-bootstrap:     ## (re-)apply sql/bootstrap.sql — idempotent
-	docker compose exec postgres psql -U running_user -d running_analytics_db \
-		-f /docker-entrypoint-initdb.d/bootstrap.sql
+bootstrap:     ## (re-)apply every sql/*.sql in order — idempotent
+	for f in sql/*.sql; do \
+		docker compose exec postgres psql -U running_user -d running_analytics_db \
+			-v ON_ERROR_STOP=1 -f "/docker-entrypoint-initdb.d/$$(basename $$f)" \
+			|| exit 1; \
+	done
 
 athlete:       ## print the authenticated athlete profile
 	$(VENV)/running-pipeline athlete

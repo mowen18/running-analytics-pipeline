@@ -12,6 +12,7 @@ dependencies = [
     "requests>=2.32",
     "pydantic-settings>=2.6",
     "click>=8.1",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -36,3 +37,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: needs the local dockerized Postgres (start it with `make up`)",
+]

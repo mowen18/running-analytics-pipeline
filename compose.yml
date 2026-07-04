@@ -9,9 +9,10 @@ services:
       - "5433:5432"
     volumes:
       - running_postgres_data:/var/lib/postgresql/data
-      # Runs once on first init of an empty data volume; re-apply any time
-      # with `make bootstrap` (the script is idempotent).
-      - ./sql/bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap.sql:ro
+      # Every sql/*.sql runs alphabetically on first init of an empty data
+      # volume (bootstrap.sql sorts before the table files that need its
+      # schemas); re-apply any time with `make bootstrap` — all idempotent.
+      - ./sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U running_user -d running_analytics_db"]
       interval: 5s
