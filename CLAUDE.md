@@ -6,8 +6,7 @@
   one, stop and ask — do not silently deviate.
 
 ## Current status
-- We are implementing **Phase 0 only**. Do not build anything from
-  Phase 1 or later, even if it seems convenient.
+- Phase 0 is complete. Phase 1 is next
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
