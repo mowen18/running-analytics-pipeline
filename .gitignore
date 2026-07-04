@@ -1,0 +1,44 @@
+# ── Secrets & credentials — never commit ─────────────────────────────
+.env
+.env.*
+!.env.example
+.secrets/
+strava_tokens.json
+*.pem
+
+# dbt local profile contains DB credentials; profiles.yml.example is the
+# committed template
+dbt/profiles.yml
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# ── Tooling caches ────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ── dbt artifacts ─────────────────────────────────────────────────────
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+logs/
+
+# ── OS / editor noise ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
