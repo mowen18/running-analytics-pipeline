@@ -1,0 +1,3 @@
+# Dependencies are declared once in pyproject.toml; this file exists so
+# `pip install -r requirements.txt` works as a conventional entry point.
+-e .[dev]
