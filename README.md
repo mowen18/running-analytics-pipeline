@@ -327,18 +327,17 @@ exactly what data would populate it.
 
 ## Known limitations
 
-* **The current history carries no heart rate** (Apple Health → Strava
-  drops it), so efficiency and drift analytics are structurally empty
-  until runs are recorded with HR reaching Strava. All metric logic is
-  verified with synthetic fixtures in the meantime.
 * **All current activities are indoor** (treadmill), so no weather has
-  been fetched yet either — the first outdoor GPS run activates that
-  path end-to-end.
+  been fetched yet — the first outdoor GPS run activates that path
+  end-to-end, and until then weather-context analyses stay empty.
 * Activities uploaded or edited **more than 14 days after they
   occurred** are only caught by `make reconcile`, not incremental sync.
+  (The July 2026 heart-rate re-import was ingested exactly this way:
+  old-dated re-uploads are invisible to the incremental window.)
 * Open-Meteo's archive runs **~5 days behind**; recent runs carry
   explicit NULL weather rows that self-heal on later syncs.
-* The plan's **manual drift-plausibility check** (Phase 5 acceptance 6)
-  and the **dashboard screenshots / dbt lineage image** in `images/`
-  are deferred until real HR-carrying runs exist — empty-state
-  screenshots would not communicate the project.
+* The history is **short** (April 2026 onward): weekly sufficiency and
+  rolling medians work, but long-horizon trend claims need more months
+  of data.
+* The **dashboard screenshots / dbt lineage image** in `images/` are
+  still pending capture now that the marts are populated.

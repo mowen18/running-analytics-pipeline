@@ -19,9 +19,10 @@
 - All activities ingested so far are indoor (trainer=true, no coordinates),
   so `sync-weather` correctly reports eligible_runs=0 until the first
   outdoor GPS run — that is expected, not a bug
-- No activity has heart-rate data (has_heartrate=false everywhere; the
-  Apple Health → Strava sync carries no HR), so easy_run_eligible is
-  false for the whole current history — also expected, not a bug
+- History was re-imported into Strava on 2026-07-05 WITH heart rate
+  (109 activities, Apr–Jul 2026, all has_heartrate=true; the old
+  44-activity no-HR history was deleted from Strava and the raw_strava
+  tables rebuilt via reconcile). Efficiency and drift marts are live
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
