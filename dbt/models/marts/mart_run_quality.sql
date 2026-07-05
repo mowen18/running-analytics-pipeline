@@ -1,0 +1,59 @@
+{#
+  The run-level quality view: one row per running activity with its
+  efficiency value, eligibility verdict, weather context, and drift
+  context. This is the mart that lets the dashboard answer "why didn't
+  run X count?" without reaching into intermediate models (D19:
+  marts only). Efficiency is computed for EVERY heart-rate-carrying run
+  — hard efforts included — while the trend/band marts aggregate
+  qualifying easy runs only; both facts are visible here side by side.
+#}
+
+with runs as (
+
+    select * from {{ ref('int_run_efficiency') }}
+
+),
+
+drift as (
+
+    select
+        activity_id,
+        decoupling_pct,
+        exclusion_reason as drift_exclusion_reason
+    from {{ ref('int_run_drift_halves') }}
+
+)
+
+select
+    runs.activity_id,
+    runs.start_date_local,
+    runs.week_start_date,
+    runs.activity_name,
+    runs.sport_type,
+    runs.is_trainer,
+    runs.distance_mi,
+    runs.moving_time_min,
+    runs.pace_min_per_mi,
+    runs.average_hr_bpm,
+    runs.aerobic_efficiency_m_per_heartbeat,
+    runs.is_qualifying,
+    runs.exclusion_reason,
+    runs.long_run_eligible,
+    runs.weather_available,
+    runs.temperature_f,
+    -- Per-run band, same vocabulary as mart_efficiency_by_temp_band:
+    -- indoor (weather not applicable) / a D14 seed band / weather
+    -- unavailable (outdoor, unmatched or temperature missing).
+    case
+        when runs.is_trainer then 'indoor'
+        else coalesce(bands.band_label, 'weather unavailable')
+    end as temperature_band_label,
+    drift.decoupling_pct,
+    drift.drift_exclusion_reason
+from runs
+left join {{ ref('temperature_bands') }} bands
+    on not runs.is_trainer
+    and runs.weather_available
+    and (bands.min_temperature_f is null or runs.temperature_f >= bands.min_temperature_f)
+    and (bands.max_temperature_f is null or runs.temperature_f <= bands.max_temperature_f)
+left join drift using (activity_id)

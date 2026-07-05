@@ -89,11 +89,13 @@ models:
       only; the period column exists so finer grains can be added
       without breaking consumers). All three seed bands always appear —
       an empty band has count 0 and NULL statistics, distinguishable
-      from a low-efficiency band. A fourth explicit 'weather
-      unavailable' row carries the qualifying runs that matched no
-      observation, so the band comparison can never silently overstate
-      its coverage. Population: qualifying easy runs only, banded by
-      matched temperature_f against the seed bounds.
+      from a low-efficiency band. Two explicit pseudo-band rows keep
+      "not applicable" distinct from "missing": 'indoor' carries
+      qualifying treadmill runs (no outdoor weather applies), and
+      'weather unavailable' carries outdoor qualifying runs that
+      matched no observation — so the band comparison can never
+      silently overstate its coverage. Population: qualifying easy runs
+      only, banded by matched temperature_f against the seed bounds.
     columns:
       - name: period
         description: Aggregation period; 'all_time' in v1.
@@ -102,14 +104,17 @@ models:
           - accepted_values:
               arguments: {values: ['all_time']}
       - name: band_key
-        description: cold / mild / warm (from the seed) or the explicit no_weather pseudo-band.
+        description: >
+          cold / mild / warm (from the seed) or the explicit
+          pseudo-bands: indoor (weather not applicable) and no_weather
+          (weather missing for an outdoor run).
         tests:
           - unique
           - not_null
           - accepted_values:
-              arguments: {values: [cold, mild, warm, no_weather]}
+              arguments: {values: [cold, mild, warm, indoor, no_weather]}
       - name: band_label
-        description: Display label (D14 wording, or 'weather unavailable').
+        description: Display label (D14 wording, 'indoor', or 'weather unavailable').
         tests: [not_null]
       - name: qualifying_run_count
         description: Sample size — the dashboard must show it with every comparison.
@@ -125,14 +130,50 @@ models:
       - name: avg_hr_bpm
         description: Average HR context for the band.
 
+  - name: mart_run_quality
+    description: >
+      One row per running activity — the consumer-facing quality view
+      the dashboard's eligibility table reads. Carries the run's
+      efficiency value (computed for EVERY heart-rate-carrying run,
+      hard efforts included), the D9 qualifying verdict with its
+      exclusion reason, weather context with a per-run temperature-band
+      label (indoor / D14 band / weather unavailable), and drift
+      context (decoupling or the D16 exclusion reason) when the run is
+      a drift candidate. Exists so "why didn't run X count?" is
+      answerable from the analytics schema alone (D19 marts-only).
+    columns:
+      - name: activity_id
+        description: Strava activity id (grain of the mart).
+        tests: [unique, not_null]
+      - name: aerobic_efficiency_m_per_heartbeat
+        description: >
+          D10 metric for this run regardless of eligibility; NULL only
+          when HR is absent. Trend/band marts aggregate qualifying runs
+          only — this column shows every run's value anyway.
+      - name: is_qualifying
+        description: D9 easy-run verdict (what the aggregates count).
+        tests: [not_null]
+      - name: exclusion_reason
+        description: First failing D9 rule; NULL when qualifying.
+      - name: temperature_band_label
+        description: >
+          Per-run band: 'indoor' (trainer; weather not applicable), a
+          D14 seed band label, or 'weather unavailable' (outdoor with
+          no matched temperature).
+        tests: [not_null]
+      - name: decoupling_pct
+        description: Drift result when analyzed; NULL for non-candidates.
+      - name: drift_exclusion_reason
+        description: First failing D16 check for unanalyzed candidates.
+
   - name: mart_run_drift
     description: >
       One row per successfully analyzed drift run: decoupling percentage
       with per-half detail, duration/distance/temperature context, and
       the data-quality numbers behind the value (sample counts, paused
       fraction, average sample gap). Excluded candidates are NOT here —
-      their deterministic reasons live in int_run_drift_halves, which
-      the dashboard's data-quality panel reads. D17 sign convention:
+      their deterministic reasons surface in mart_run_quality, which
+      the dashboard's eligibility table reads. D17 sign convention:
       positive = efficiency declined in the second half.
     columns:
       - name: activity_id

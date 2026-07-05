@@ -21,7 +21,16 @@ from running_pipeline.database import get_connection
 BLUE = "#2a78d6"
 GRAY = "#898781"
 INK_SECONDARY = "#52514e"
-ORDINAL_RAMP = {"cold": "#86b6ef", "mild": "#2a78d6", "warm": "#104281", "no_weather": "#c3c2b7"}
+# The three D14 bands use the ordinal blue ramp; the two pseudo-bands
+# (indoor = weather not applicable, no_weather = weather missing) sit
+# outside the temperature scale and get neutral grays instead.
+ORDINAL_RAMP = {
+    "cold": "#86b6ef",
+    "mild": "#2a78d6",
+    "warm": "#104281",
+    "indoor": "#898781",
+    "no_weather": "#c3c2b7",
+}
 GRIDLINE = "#e1e0d9"
 
 # Daily time axis: date-level tick labels, never hour-level.
@@ -49,6 +58,7 @@ ANALYTICS_TABLES = (
     "mart_weekly_training",
     "mart_efficiency_trend",
     "mart_efficiency_by_temp_band",
+    "mart_run_quality",
     "mart_run_drift",
     "mart_drift_trend",
 )
@@ -130,8 +140,34 @@ EFFICIENCY_TREND_COLUMNS = {
     "rolling_28d_qualifying_run_count": st.column_config.NumberColumn("28-day (n)"),
     "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
     "temperature_band_key": None,  # the label column already carries it
-    "temperature_band_label": st.column_config.TextColumn("Temp band"),
+    # Week-level context: the band of the WEEK'S average qualifying-run
+    # temperature — per-run bands live in the eligibility table below.
+    "temperature_band_label": st.column_config.TextColumn("Week temp band"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
+}
+
+RUN_QUALITY_COLUMNS = {
+    "activity_id": None,
+    "start_date_local": st.column_config.DatetimeColumn("Date", format="MMM D"),
+    "week_start_date": None,
+    "activity_name": st.column_config.TextColumn("Run"),
+    "sport_type": None,
+    "is_trainer": None,  # the band column says 'indoor'
+    "distance_mi": st.column_config.NumberColumn("Miles", format="%.1f"),
+    "moving_time_min": st.column_config.NumberColumn("Min", format="%.1f"),
+    "pace_min_per_mi": st.column_config.NumberColumn("Pace (min/mi)", format="%.2f"),
+    "average_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
+    "aerobic_efficiency_m_per_heartbeat": st.column_config.NumberColumn(
+        "Eff (m/beat)", format="%.4f"
+    ),
+    "is_qualifying": st.column_config.CheckboxColumn("Qualifying"),
+    "exclusion_reason": st.column_config.TextColumn("Why excluded"),
+    "long_run_eligible": None,
+    "weather_available": None,  # the band column carries the outcome
+    "temperature_f": st.column_config.NumberColumn("°F", format="%.1f"),
+    "temperature_band_label": st.column_config.TextColumn("Band"),
+    "decoupling_pct": st.column_config.NumberColumn("Decoupling %", format="%.2f"),
+    "drift_exclusion_reason": st.column_config.TextColumn("Drift note"),
 }
 
 
@@ -240,6 +276,23 @@ def efficiency_view():
         st.altair_chart(
             themed(alt.layer(bars, labels).properties(height=190)), use_container_width=True
         )
+        st.caption(
+            "Median of per-run efficiency across qualifying easy runs in each "
+            "band — runs are banded individually by their own matched "
+            "temperature, never averaged by week."
+        )
+
+    st.subheader("Every run, with its verdict")
+    quality = load("mart_run_quality").sort_values("start_date_local", ascending=False)
+    st.dataframe(
+        quality, use_container_width=True, hide_index=True, column_config=RUN_QUALITY_COLUMNS
+    )
+    st.caption(
+        "Efficiency is computed for every heart-rate-carrying run; the trend "
+        "and band charts aggregate QUALIFYING easy runs only (D9), because "
+        "meters-per-heartbeat is only comparable at comparable effort. The "
+        "easy ceiling is the `easy_hr_max` dbt var (152 bpm)."
+    )
 
     st.dataframe(
         trend, use_container_width=True, hide_index=True, column_config=EFFICIENCY_TREND_COLUMNS

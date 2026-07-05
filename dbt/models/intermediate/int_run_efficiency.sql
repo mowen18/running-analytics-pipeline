@@ -66,6 +66,7 @@ select
     relative_humidity_pct,
     wind_speed_mph,
     weather_available,
+    is_trainer,
     easy_run_eligible as is_qualifying,
     long_run_eligible,
     exclusion_reason

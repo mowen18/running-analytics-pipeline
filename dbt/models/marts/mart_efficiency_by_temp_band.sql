@@ -33,10 +33,32 @@ banded as (
 
 ),
 
--- Qualifying runs with no matched weather can't be banded; hiding them
--- would make the band comparison look more complete than it is. They
--- get an explicit pseudo-band row instead (data-quality principle 1:
--- missing data is explained, never silently dropped).
+-- Qualifying runs outside the temperature bands get explicit
+-- pseudo-band rows rather than vanishing (data-quality principle 1) —
+-- and "not applicable" is kept distinct from "missing":
+--   indoor      = treadmill runs; no outdoor weather APPLIES
+--   no_weather  = outdoor runs with no matched observation (unresolved
+--                 coordinates or an archive gap); weather is MISSING
+-- Both rows are always present, count 0 when empty.
+indoor as (
+
+    select
+        'indoor' as band_key,
+        'indoor' as band_label,
+        98 as sort_order,
+        count(*) as qualifying_run_count,
+        percentile_cont(0.5) within group (
+            order by aerobic_efficiency_m_per_heartbeat
+        ) as median_efficiency,
+        avg(aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
+        null::numeric as avg_temperature_f,
+        avg(pace_min_per_mi) as avg_pace_min_per_mi,
+        avg(average_hr_bpm) as avg_hr_bpm
+    from qualifying_runs
+    where is_trainer
+
+),
+
 unbanded as (
 
     select
@@ -52,7 +74,7 @@ unbanded as (
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
     from qualifying_runs
-    where not weather_available
+    where not is_trainer and not weather_available
 
 )
 
@@ -68,6 +90,21 @@ select
     round(avg_pace_min_per_mi::numeric, 2) as avg_pace_min_per_mi,
     round(avg_hr_bpm::numeric, 0)         as avg_hr_bpm
 from banded
+
+union all
+
+select
+    'all_time',
+    band_key,
+    band_label,
+    sort_order,
+    qualifying_run_count,
+    round(median_efficiency::numeric, 4),
+    round(mean_efficiency::numeric, 4),
+    avg_temperature_f,
+    round(avg_pace_min_per_mi::numeric, 2),
+    round(avg_hr_bpm::numeric, 0)
+from indoor
 
 union all
 

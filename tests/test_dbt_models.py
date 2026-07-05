@@ -223,6 +223,17 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     # mild per D14's "50-70"; 21.17°C -> 70.1°F is warm.
     outdoor_run(db, 8, day="2026-06-16", hr=145.0, cell="12.00_12.00", temp_c=21.11)
     outdoor_run(db, 9, day="2026-06-17", hr=145.0, cell="13.00_13.00", temp_c=21.17)
+    # ── Qualifying treadmill run (isolated week of Mon 2026-05-18):
+    # must land in the explicit 'indoor' pseudo-band, not 'no_weather'.
+    insert_activity(
+        db,
+        10,
+        start="2026-05-20T09:47:23Z",
+        start_local="2026-05-20T04:47:23Z",
+        start_latlng=None,
+        trainer=True,
+        average_heartrate=145.0,
+    )
     db.commit()
 
     result = run_dbt("build")
@@ -244,6 +255,7 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         7: "moving time under 30 minutes",
         8: None,
         9: None,
+        10: None,  # treadmill runs qualify per D9 — weather isn't a rule
     }
 
     # Efficiency traces to documented fields: 200 m/min at 140 bpm.
@@ -262,12 +274,13 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         """
     ).fetchall()
     assert [(w[0], w[1], w[2]) for w in weeks] == [
+        ("2026-05-18", 1, False),  # the treadmill run's isolated week
         ("2026-06-01", 2, True),
         ("2026-06-08", 1, False),  # excluded runs don't count toward D12
         ("2026-06-15", 2, True),
     ]
     # Week 1 median interpolates between 200/150 and 200/140.
-    assert float(weeks[0][3]) == pytest.approx((200.0 / 150.0 + 200.0 / 140.0) / 2, abs=0.0001)
+    assert float(weeks[1][3]) == pytest.approx((200.0 / 150.0 + 200.0 / 140.0) / 2, abs=0.0001)
 
     # Trend mart: the 28-day window ending Sun 2026-06-21 spans all five
     # qualifying runs; the week's own band comes from its avg temperature.
@@ -295,8 +308,29 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     assert bands["cold"][0] == 1  # 49.9°F
     assert bands["mild"][0] == 2  # 50.0°F and 70.0°F — both edges inclusive
     assert bands["warm"][0] == 1  # 70.1°F
-    assert bands["no_weather"][0] == 1  # explicit, not silently dropped
-    assert sum(count for count, _ in bands.values()) == 5  # conservation
+    # "Not applicable" and "missing" stay distinct: the treadmill run is
+    # indoor, the coordinate-less outdoor run is weather-unavailable.
+    assert bands["indoor"][0] == 1
+    assert bands["no_weather"][0] == 1
+    assert sum(count for count, _ in bands.values()) == 6  # conservation
+
+    # Run-level quality mart: every run visible with its verdict, band,
+    # and an efficiency value even when excluded (hard efforts included).
+    quality = {
+        row[0]: (row[1], row[2], row[3])
+        for row in db.execute(
+            "SELECT activity_id, exclusion_reason, temperature_band_label, "
+            "       aerobic_efficiency_m_per_heartbeat "
+            "FROM analytics.mart_run_quality"
+        ).fetchall()
+    }
+    assert len(quality) == 10  # every run, qualifying or not
+    assert quality[4][0] == "tagged as race"
+    assert quality[4][2] is not None  # excluded runs keep their value
+    assert quality[1][1] == "< 50°F"  # banded per-run by its own temp
+    assert quality[3][1] == "weather unavailable"  # outdoor, unmatched
+    assert quality[10][1] == "indoor"  # trainer: not applicable, not missing
+    assert quality[5][2] is None  # no HR -> no value (missing, not zero)
 
 
 def insert_stream(db, activity_id, *, status="success", samples=None):
