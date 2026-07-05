@@ -6,8 +6,13 @@
   one, stop and ask — do not silently deviate.
 
 ## Current status
-- Phases 0–5 are complete (Release 1.1). Next: Phase 6 — Streamlit
-  views (max 3, marts only, per D19) and portfolio docs
+- All phases (0–6) are complete: the full project plan is implemented.
+  Remaining follow-ups wait on real data: dashboard screenshots + dbt
+  lineage image (images/README.md), and the manual drift-plausibility
+  inspection (Phase 5 acceptance criterion 6)
+- The Streamlit app (app/streamlit_app.py, `make app`) reads ONLY the
+  analytics schema — enforced by an allow-list and tests/test_app.py.
+  Keep business logic in dbt, never in the app
 - Efficiency and drift marts are structurally empty of trend data until
   HR-carrying runs exist — see the no-HR note below; sync-streams
   likewise reports eligible=0 (D15 requires HR)
@@ -51,6 +56,8 @@
   the example, reads .env; metric thresholds are dbt vars in
   dbt_project.yml; layers map to the D3 schemas via the
   generate_schema_name override — do not remove it)
+- App:     `make app` (Streamlit, three views per D19) / `make all`
+  (every sync + dbt build)
 - Rotated Strava tokens live in `.secrets/strava_tokens.json` (gitignored,
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.

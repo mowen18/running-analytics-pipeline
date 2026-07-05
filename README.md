@@ -5,8 +5,36 @@ is improving over time, using Strava activities and historical hourly weather.
 Pipeline-first: the deliverables are ingestion, warehouse models, metrics,
 tests, and docs — the dashboard is a thin cap.
 
+**Questions this answers** (that standard Strava/Apple Fitness views can't):
+
+* Is pace at a comparable heart rate improving over time?
+* How does running efficiency vary under different weather conditions?
+* Is cardiac drift decreasing during longer easy runs?
+* How is weekly volume changing alongside these efficiency measures?
+
 **Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are locked).
-**Status:** Phase 5 complete — Release 1.1: stream ingestion and cardiac-drift models on top of the MVP. Phase 6 (Streamlit views + portfolio docs) is next.
+**Status:** all six phases complete (Release 1.1 + presentation layer).
+
+## Architecture
+
+```text
+Strava API ──────────────┐
+                         │
+Open-Meteo API ──────────┼──> Python ingestion (src/running_pipeline)
+                         │          │
+                         │          v
+                         │   PostgreSQL container
+                         │   running_analytics_db (port 5433)
+                         │          │
+                         │          v
+                         │    dbt transformations (dbt/)
+                         │          │
+                         │          v
+                         └────> Analytics marts
+                                    │
+                                    v
+                              Streamlit app (app/)
+```
 
 ## Prerequisites
 
@@ -68,6 +96,8 @@ make reconcile        # full reconciliation from SYNC_START_DATE
 make sync-weather     # fetch hourly weather for outdoor runs not yet covered
 make reconcile-weather # re-fetch weather even for already-cached hours
 make sync-streams     # backfill activity streams for drift-eligible runs
+make app              # launch the Streamlit dashboard (three views)
+make all              # full refresh: every sync, then dbt build
 make dbt-build        # build all dbt models and run their tests
 make dbt-test         # dbt tests only
 make dbt-freshness    # source freshness (raw fetched_at ages)
@@ -266,3 +296,49 @@ share ≤ 25 %. Every drift candidate that can't be analyzed carries a
 deterministic exclusion reason in `int_run_drift_halves`; drift trend
 weeks below the D12 run count are flagged `is_sufficient = false` and
 hidden by the dashboard, never deleted.
+
+## Dashboard
+
+`make app` serves exactly three Streamlit views (decision D19):
+**Aerobic Efficiency** (weekly + 28-day rolling trend, temperature-band
+comparison), **Weekly Training** (mileage, moving time, run counts), and
+**Cardiac Drift** (run-level decoupling with the rolling trend). The app
+is deliberately thin: it reads **only the `analytics` schema** — a rule
+enforced by an allow-list in the code and a test that fails if any other
+schema is ever named — and contains no business logic; every metric,
+threshold, and flag is computed and tested in dbt. Sample counts appear
+beside every statistic, insufficient weeks are flagged and excluded from
+trend lines but never hidden from tables, and each empty view explains
+exactly what data would populate it.
+
+## Data-quality principles
+
+1. **Missing never means zero.** Absent HR, weather, or streams stays
+   NULL (or an explicit status row) through every layer, down to the
+   dashboard's empty states.
+2. **Raw data stays recoverable.** Full API payloads live in JSONB next
+   to the typed columns that ingestion itself needs; remodeling is a
+   re-transform, never a re-download.
+3. **Exclusion is explained, never silent.** Every ineligible run
+   carries a human-readable reason; every aggregate carries its sample
+   count.
+4. **Idempotency everywhere.** Re-running any sync or build converges;
+   nothing duplicates and nothing is lost to interruption.
+
+## Known limitations
+
+* **The current history carries no heart rate** (Apple Health → Strava
+  drops it), so efficiency and drift analytics are structurally empty
+  until runs are recorded with HR reaching Strava. All metric logic is
+  verified with synthetic fixtures in the meantime.
+* **All current activities are indoor** (treadmill), so no weather has
+  been fetched yet either — the first outdoor GPS run activates that
+  path end-to-end.
+* Activities uploaded or edited **more than 14 days after they
+  occurred** are only caught by `make reconcile`, not incremental sync.
+* Open-Meteo's archive runs **~5 days behind**; recent runs carry
+  explicit NULL weather rows that self-heal on later syncs.
+* The plan's **manual drift-plausibility check** (Phase 5 acceptance 6)
+  and the **dashboard screenshots / dbt lineage image** in `images/`
+  are deferred until real HR-carrying runs exist — empty-state
+  screenshots would not communicate the project.

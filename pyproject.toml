@@ -15,6 +15,9 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "dbt-core>=1.9",
     "dbt-postgres>=1.9",
+    "streamlit>=1.40",
+    "altair>=5.0",
+    "pandas>=2.0",
 ]
 
 [project.optional-dependencies]

@@ -8,7 +8,7 @@ DBT = cd dbt && set -a && . ../.env && set +a && ../$(VENV)/dbt
 
 .PHONY: help up down bootstrap athlete authorize sync-activities reconcile \
 	sync-weather reconcile-weather sync-streams dbt-profile dbt-build \
-	dbt-test dbt-freshness dbt-docs test lint format
+	dbt-test dbt-freshness dbt-docs app all test lint format
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | sed 's/:.*//' | sort
@@ -61,6 +61,11 @@ dbt-freshness: dbt-profile ## check source freshness (raw fetched_at ages)
 
 dbt-docs: dbt-profile      ## generate + serve dbt docs locally
 	$(DBT) docs generate --profiles-dir . && $(DBT) docs serve --profiles-dir .
+
+app:           ## launch the Streamlit dashboard (three views, marts only)
+	$(VENV)/streamlit run app/streamlit_app.py
+
+all: sync-activities sync-weather sync-streams dbt-build  ## full refresh: all syncs + dbt
 
 test:
 	$(VENV)/pytest
