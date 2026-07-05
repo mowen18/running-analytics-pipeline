@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # Metrics configuration (decision D9)
     easy_hr_max: int = 152
 
+    # Weather ingestion (Phase 2). Open-Meteo needs no credentials; these
+    # only bound API usage far below the ~10k/day free tier.
+    weather_request_budget: int = 500
+    weather_batch_gap_days: int = 7
+
     # Stream ingestion (decision D15 — used from Phase 5 / Release 1.1)
     stream_min_moving_minutes: int = 45
     stream_max_activities_per_run: int = 50

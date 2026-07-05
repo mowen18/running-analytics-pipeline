@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 import click
 import psycopg
 
-from running_pipeline import activity_ingestion
+from running_pipeline import activity_ingestion, weather_ingestion
 from running_pipeline.config import load_settings
 from running_pipeline.database import get_connection
 from running_pipeline.strava_client import (
@@ -17,6 +17,7 @@ from running_pipeline.strava_client import (
     StravaAuthError,
     StravaClient,
 )
+from running_pipeline.weather_client import WeatherClient
 
 
 @click.group()
@@ -86,6 +87,44 @@ def sync_activities(full: bool):
     )
     if report.stopped_early:
         click.echo("Committed pages were kept; re-run later to finish.")
+        sys.exit(3)
+
+
+@cli.command("sync-weather")
+@click.option(
+    "--full",
+    is_flag=True,
+    help="Re-fetch weather even for already-cached hours (the archive occasionally revises data).",
+)
+def sync_weather(full: bool):
+    """Attach hourly weather to outdoor runs (idempotent; the table is the cache)."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stderr,
+    )
+    settings = load_settings()
+    client = WeatherClient(settings)
+    try:
+        with get_connection(settings) as conn:
+            report = weather_ingestion.sync_weather(settings, client, conn, full=full)
+    except psycopg.OperationalError as exc:
+        raise click.ClickException(
+            f"Could not reach Postgres: {exc}\nStart it with `make up`."
+        ) from exc
+
+    outcome = "stopped early at the request limit" if report.stopped_early else "complete"
+    click.echo(
+        f"Weather sync {outcome}: eligible_runs={report.eligible_runs} "
+        f"runs_without_location={report.runs_without_location} "
+        f"hours_needed={report.hours_needed} hours_cached={report.hours_cached} "
+        f"requests={report.requests_made} inserted={report.inserted} "
+        f"updated={report.updated} skipped={report.skipped} "
+        f"failed_batches={report.failed_batches} "
+        f"hours_still_missing={report.hours_still_missing}"
+    )
+    if report.stopped_early:
+        click.echo("Committed batches were kept; re-run later to fetch the rest.")
         sys.exit(3)
 
 

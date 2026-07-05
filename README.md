@@ -6,7 +6,7 @@ Pipeline-first: the deliverables are ingestion, warehouse models, metrics,
 tests, and docs — the dashboard is a thin cap.
 
 **Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are locked).
-**Status:** Phase 1 complete — activity ingestion with incremental sync. Phase 2 (weather) is next.
+**Status:** Phase 2 complete — activity ingestion plus hourly weather ingestion. Phase 3 (dbt models) is next.
 
 ## Prerequisites
 
@@ -46,6 +46,7 @@ All configuration lives in `.env` (gitignored); the full annotated contract is
 | `STRAVA_REFRESH_TOKEN` | Optional bootstrap only — after the first refresh, the rotated token in `.secrets/strava_tokens.json` is authoritative |
 | `POSTGRES_*` | Database connection (decision D2: `running_analytics_db` / `running_user` / port 5433) |
 | `SYNC_START_DATE`, `SYNC_OVERLAP_DAYS` | Ingestion window (decisions D5, D6 — used from Phase 1) |
+| `WEATHER_REQUEST_BUDGET`, `WEATHER_BATCH_GAP_DAYS` | Optional weather-sync bounds (Phase 2). Open-Meteo needs **no API key** — there are no weather credentials |
 
 ## Token handling
 
@@ -64,6 +65,8 @@ make bootstrap        # (re-)apply every sql/*.sql — idempotent
 make athlete          # print the authenticated athlete profile
 make sync-activities  # incremental Strava activity sync (14-day overlap)
 make reconcile        # full reconciliation from SYNC_START_DATE
+make sync-weather     # fetch hourly weather for outdoor runs not yet covered
+make reconcile-weather # re-fetch weather even for already-cached hours
 make test             # pytest (all external HTTP mocked; DB-integration
                       # tests skip visibly when Postgres is down)
 make lint             # ruff check
@@ -78,7 +81,10 @@ the [`sql/`](sql/) scripts on first container init (or `make bootstrap`).
 Phase 1 owns `raw_strava.activities` — one row per activity, full API
 payload in JSONB with sync-critical fields promoted to typed columns
 (`activity_id` PK, `start_date_utc`, `activity_type`) — and
-`raw_strava.sync_state`, which holds per-job sync watermarks.
+`raw_strava.sync_state`, which holds per-job sync watermarks. Phase 2 owns
+`raw_weather.hourly` — one row per normalized location and UTC hour, typed
+measurement columns plus the original per-hour payload in JSONB, unique on
+`(location_key, weather_timestamp)`.
 
 ## Incremental sync strategy
 
@@ -104,3 +110,37 @@ watermark is not advanced, and the command exits with code 3 so the
 interruption is visible — the next run simply re-covers the window. Failed
 or interrupted runs never advance the watermark. Counts are logged on
 every run; token values never are.
+
+## Weather ingestion
+
+`make sync-weather` attaches hourly weather (Open-Meteo historical archive,
+decision D8) to each **outdoor run**: sport type `Run`/`TrailRun`, start
+coordinates present, and Strava's `trainer` flag not set. Indoor and
+virtual runs are excluded by design — they have no location, and outdoor
+weather would be wrong for them — and are reported explicitly as
+`runs_without_location`. Open-Meteo requires **no API key**; a per-sync
+request budget (`WEATHER_REQUEST_BUDGET`) and 429 handling keep usage far
+below its ~10k requests/day free tier, with the same stop-cleanly / exit
+code 3 contract as the activity sync.
+
+**Timezone handling:** everything is UTC end to end. Archive requests pass
+`timezone=UTC`, returned hourly timestamps are stored as `timestamptz`,
+and a run is matched to the observation at its start hour —
+`date_trunc('hour', start_date_utc)` — never to a daily aggregate.
+
+**The table is the cache.** There is no separate cache layer and no
+watermark: each sync derives the location-hours eligible runs need,
+subtracts what `raw_weather.hourly` already holds (unique on
+`(location_key, weather_timestamp)`; coordinates are rounded to 2 decimal
+places, a ~1.1 km cell, per decision D7), and batches the remainder into
+one archive request per location and contiguous date range. Re-runs are
+idempotent and repeated runs in the same cell hit the cache with zero
+requests.
+
+**Missing weather is explicit, never zero.** Hours the archive has no data
+for (recent runs fall inside its ~5-day publication delay) are stored as
+rows with NULL measurements and the original payload preserved; later
+incremental syncs re-request those hours until data appears. A failed
+request for one location never fails the sync — it is logged, counted in
+`failed_batches`, and retried next run. Exact coordinates are never logged;
+only 2-decimal cell keys appear in logs and stored keys.
