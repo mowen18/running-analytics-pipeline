@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     stream_min_moving_minutes: int = 45
     stream_max_activities_per_run: int = 50
 
+    # Coordinate backfill (map-privacy polyline fallback)
+    coordinate_max_activities_per_run: int = 100
+
     token_file: Path = DEFAULT_TOKEN_FILE
 
 

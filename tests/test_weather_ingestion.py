@@ -246,7 +246,9 @@ def test_indoor_runs_are_counted_explicitly(engine_fakes, caplog):
 
 @pytest.fixture
 def db(integration_db):
-    integration_db.execute("TRUNCATE raw_strava.activities, raw_weather.hourly")
+    integration_db.execute(
+        "TRUNCATE raw_strava.activities, raw_strava.activity_coordinates, raw_weather.hourly"
+    )
     integration_db.commit()
     return integration_db
 
@@ -312,11 +314,19 @@ def test_extraction_keeps_outdoor_runs_and_excludes_the_rest(db):
     insert_activity(db, 5, sport_type="Walk")  # not a run — excluded
     insert_activity(db, 6, sport_type="VirtualRun")  # indoor by type — excluded
     insert_activity(db, 7, start="2023-12-31T23:59:59Z")  # before D5 floor — excluded
+    # Map-privacy fallback: no payload coordinates, resolved row — kept.
+    insert_activity(db, 8, start="2026-06-16T08:00:00Z", start_latlng=None)
+    db.execute(
+        "INSERT INTO raw_strava.activity_coordinates VALUES "
+        "(8, 22.446, 33.786, 'map_polyline', now())"
+    )
     db.commit()
 
     runs = select_eligible_runs(db, SYNC_START)
 
-    assert [run.activity_id for run in runs] == [1, 2]
+    assert [run.activity_id for run in runs] == [1, 2, 8]
+    resolved = runs[-1]
+    assert resolved.location_key == "22.45_33.79"  # D7-normalized from the resolved row
 
 
 @pytest.mark.integration

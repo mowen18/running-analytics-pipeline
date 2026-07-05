@@ -52,6 +52,12 @@
   cache (UNIQUE location_key + weather_timestamp); missing weather is a
   row with NULL measurements, never zero and never silently absent;
   everything is requested and matched in UTC
+- Coordinates: `make backfill-coordinates` resolves run starts into
+  raw_strava.activity_coordinates (payload start_latlng, else detail
+  polyline first point, else explicit 'unavailable'). Needed because
+  Strava's "hide entire map" privacy setting strips start_latlng from
+  ALL API payloads; weather eligibility and dbt staging prefer the
+  resolved row. Run it before sync-weather (make all does)
 - dbt:     `make dbt-build` / `make dbt-test` / `make dbt-freshness` /
   `make dbt-docs` (project in dbt/ per D4; profiles.yml auto-copied from
   the example, reads .env; metric thresholds are dbt vars in

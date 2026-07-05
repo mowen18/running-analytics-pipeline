@@ -2,6 +2,15 @@ with source as (
 
     select * from {{ source('raw_strava', 'activities') }}
 
+),
+
+coordinates as (
+
+    -- The map-privacy fallback: resolved start coordinates with
+    -- provenance (payload start_latlng, decoded detail polyline, or an
+    -- explicit unavailable row). Preferred over the payload below.
+    select * from {{ source('raw_strava', 'activity_coordinates') }}
+
 )
 
 select
@@ -33,13 +42,27 @@ select
             then (payload ->> 'max_heartrate')::numeric
     end                                                    as max_hr_bpm,
     coalesce((payload ->> 'trainer')::boolean, false)      as is_trainer,
-    case
-        when jsonb_array_length(coalesce(payload -> 'start_latlng', '[]'::jsonb)) = 2
-            then (payload -> 'start_latlng' ->> 0)::numeric
-    end                                                    as start_latitude,
-    case
-        when jsonb_array_length(coalesce(payload -> 'start_latlng', '[]'::jsonb)) = 2
-            then (payload -> 'start_latlng' ->> 1)::numeric
-    end                                                    as start_longitude,
-    fetched_at
+    coalesce(
+        coordinates.latitude,
+        case
+            when jsonb_array_length(coalesce(payload -> 'start_latlng', '[]'::jsonb)) = 2
+                then (payload -> 'start_latlng' ->> 0)::numeric
+        end
+    )                                                      as start_latitude,
+    coalesce(
+        coordinates.longitude,
+        case
+            when jsonb_array_length(coalesce(payload -> 'start_latlng', '[]'::jsonb)) = 2
+                then (payload -> 'start_latlng' ->> 1)::numeric
+        end
+    )                                                      as start_longitude,
+    coalesce(
+        coordinates.source,
+        case
+            when jsonb_array_length(coalesce(payload -> 'start_latlng', '[]'::jsonb)) = 2
+                then 'start_latlng'
+        end
+    )                                                      as coordinate_source,
+    source.fetched_at
 from source
+left join coordinates using (activity_id)

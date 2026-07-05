@@ -45,28 +45,36 @@ logger = logging.getLogger(__name__)
 # virtual runs are indoor regardless of their trainer flag.
 RUNNING_SPORT_TYPES = ("Run", "TrailRun")
 
+# Coordinates come from the payload's start_latlng OR the resolved
+# activity_coordinates row (the map-privacy polyline fallback — see
+# coordinate_ingestion). The resolved row wins when both exist: it is
+# never worse, and for polyline-derived rows it is the only source.
 _ELIGIBLE_RUNS_SQL = """
-    SELECT activity_id,
-           date_trunc('hour', start_date_utc) AS start_hour_utc,
-           (payload->'start_latlng'->>0)::float8 AS latitude,
-           (payload->'start_latlng'->>1)::float8 AS longitude
-    FROM raw_strava.activities
-    WHERE activity_type = ANY(%(running_types)s)
-      AND jsonb_array_length(coalesce(payload->'start_latlng', '[]'::jsonb)) = 2
-      AND NOT coalesce((payload->>'trainer')::boolean, false)
-      AND start_date_utc >= %(floor)s
-    ORDER BY start_date_utc
+    SELECT a.activity_id,
+           date_trunc('hour', a.start_date_utc) AS start_hour_utc,
+           coalesce(c.latitude::float8,  (a.payload->'start_latlng'->>0)::float8) AS latitude,
+           coalesce(c.longitude::float8, (a.payload->'start_latlng'->>1)::float8) AS longitude
+    FROM raw_strava.activities a
+    LEFT JOIN raw_strava.activity_coordinates c USING (activity_id)
+    WHERE a.activity_type = ANY(%(running_types)s)
+      AND NOT coalesce((a.payload->>'trainer')::boolean, false)
+      AND a.start_date_utc >= %(floor)s
+      AND (c.latitude IS NOT NULL
+           OR jsonb_array_length(coalesce(a.payload->'start_latlng', '[]'::jsonb)) = 2)
+    ORDER BY a.start_date_utc
 """
 
 # Same run population, opposite coordinate/trainer test: runs that can
 # never get weather. Reported explicitly per the data-quality principle.
 _INELIGIBLE_RUNS_SQL = """
     SELECT count(*)
-    FROM raw_strava.activities
-    WHERE activity_type = ANY(%(running_types)s)
-      AND start_date_utc >= %(floor)s
-      AND (jsonb_array_length(coalesce(payload->'start_latlng', '[]'::jsonb)) <> 2
-           OR coalesce((payload->>'trainer')::boolean, false))
+    FROM raw_strava.activities a
+    LEFT JOIN raw_strava.activity_coordinates c USING (activity_id)
+    WHERE a.activity_type = ANY(%(running_types)s)
+      AND a.start_date_utc >= %(floor)s
+      AND (coalesce((a.payload->>'trainer')::boolean, false)
+           OR (c.latitude IS NULL
+               AND jsonb_array_length(coalesce(a.payload->'start_latlng', '[]'::jsonb)) <> 2))
 """
 
 # An hour "has data" when any measurement is present; an all-NULL row is

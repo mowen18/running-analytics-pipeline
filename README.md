@@ -93,6 +93,7 @@ make bootstrap        # (re-)apply every sql/*.sql — idempotent
 make athlete          # print the authenticated athlete profile
 make sync-activities  # incremental Strava activity sync (14-day overlap)
 make reconcile        # full reconciliation from SYNC_START_DATE
+make backfill-coordinates # resolve run-start coordinates (payload, else polyline)
 make sync-weather     # fetch hourly weather for outdoor runs not yet covered
 make reconcile-weather # re-fetch weather even for already-cached hours
 make sync-streams     # backfill activity streams for drift-eligible runs
@@ -171,6 +172,16 @@ places, a ~1.1 km cell, per decision D7), and batches the remainder into
 one archive request per location and contiguous date range. Re-runs are
 idempotent and repeated runs in the same cell hit the cache with zero
 requests.
+
+**Map-privacy fallback.** Strava's "hide entire map" setting strips
+`start_latlng` from API payloads — even the owner's — so
+`make backfill-coordinates` resolves each run's start coordinate with
+explicit provenance in `raw_strava.activity_coordinates`: the payload's
+`start_latlng` when present (free), else the first decoded point of the
+detail endpoint's route polyline (one API call per run, resumable with
+the same rate-limit contract as the other backfills), else an explicit
+`unavailable` row. Weather eligibility and dbt staging prefer the
+resolved coordinate over the payload.
 
 ## Warehouse models (dbt)
 
@@ -327,9 +338,11 @@ exactly what data would populate it.
 
 ## Known limitations
 
-* **All current activities are indoor** (treadmill), so no weather has
-  been fetched yet — the first outdoor GPS run activates that path
-  end-to-end, and until then weather-context analyses stay empty.
+* **Long easy runs are currently treadmill runs**, so drift rows and
+  most qualifying easy runs carry no weather — correct behavior (indoor
+  runs have no meaningful outdoor weather), but it keeps the
+  temperature-band comparison sparse until qualifying outdoor runs
+  accumulate.
 * Activities uploaded or edited **more than 14 days after they
   occurred** are only caught by `make reconcile`, not incremental sync.
   (The July 2026 heart-rate re-import was ingested exactly this way:

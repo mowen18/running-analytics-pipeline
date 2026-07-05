@@ -32,7 +32,10 @@ TEST_DB = "running_analytics_test"  # the conftest scratch database
 
 @pytest.fixture
 def db(integration_db):
-    integration_db.execute("TRUNCATE raw_strava.activities, raw_strava.streams, raw_weather.hourly")
+    integration_db.execute(
+        "TRUNCATE raw_strava.activities, raw_strava.streams, "
+        "raw_strava.activity_coordinates, raw_weather.hourly"
+    )
     integration_db.commit()
     return integration_db
 
@@ -132,6 +135,14 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     insert_activity(db, 2, trainer=True, start_latlng=None)
     # Walk: must not reach fct_runs at all.
     insert_activity(db, 3, sport_type="Walk", trainer=True, start_latlng=None)
+    # Map-privacy case: payload carries no coordinates, but the resolved
+    # activity_coordinates row (decoded polyline) must drive the match.
+    insert_activity(db, 4, start="2026-06-15T11:47:23Z", start_latlng=None, average_heartrate=None)
+    db.execute(
+        "INSERT INTO raw_strava.activity_coordinates VALUES "
+        "(4, 22.446, 33.786, 'map_polyline', now())"
+    )
+    insert_weather(db, hour="2026-06-15T11:00:00+00:00", temperature=25.0, location="22.45_33.79")
     # 09:00 carries data; 10:00 is an explicit "archive had no data" row.
     # 10:00 is nearer to 09:47, but a missing-marker must never win the
     # match, so the model has to pick 09:00 (47 minutes away).
@@ -150,9 +161,9 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
         FROM analytics.fct_runs ORDER BY activity_id
         """
     ).fetchall()
-    assert len(rows) == 2  # the Walk is filtered out
+    assert len(rows) == 3  # the Walk is filtered out
 
-    outdoor, treadmill = rows
+    outdoor, treadmill, resolved = rows
     assert outdoor[1] is True  # matched despite the nearer all-NULL row
     assert outdoor[2] == Decimal("20.0")  # the 09:00 observation, not NULL
     assert outdoor[3] == 47
@@ -163,6 +174,13 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     assert treadmill[1] is False  # no coordinates: explicit, not an error
     assert treadmill[2] is None  # missing weather stays NULL, never zero
     assert (treadmill[4], treadmill[5]) == (False, True)  # no HR; 50 min
+
+    # The map-privacy fallback: coordinates came from the resolved
+    # activity_coordinates row, so weather still matches (11:00 obs at
+    # the run's D7 cell, 47 minutes from the 11:47 start).
+    assert resolved[1] is True
+    assert resolved[2] == Decimal("25.0")
+    assert resolved[3] == 47
 
 
 def outdoor_run(db, activity_id, *, day, hr, cell="12.34_-56.78", temp_c=15.0, **kwargs):

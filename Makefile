@@ -7,8 +7,9 @@ VENV := .venv/bin
 DBT = cd dbt && set -a && . ../.env && set +a && ../$(VENV)/dbt
 
 .PHONY: help up down bootstrap athlete authorize sync-activities reconcile \
-	sync-weather reconcile-weather sync-streams dbt-profile dbt-build \
-	dbt-test dbt-freshness dbt-docs app all test lint format
+	backfill-coordinates sync-weather reconcile-weather sync-streams \
+	dbt-profile dbt-build dbt-test dbt-freshness dbt-docs app all test \
+	lint format
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | sed 's/:.*//' | sort
@@ -38,6 +39,9 @@ sync-activities:   ## incremental Strava activity sync (14-day overlap window)
 reconcile:     ## full reconciliation: re-fetch everything from SYNC_START_DATE
 	$(VENV)/running-pipeline sync-activities --full
 
+backfill-coordinates:  ## resolve run-start coordinates (payload, else detail polyline)
+	$(VENV)/running-pipeline backfill-coordinates
+
 sync-weather:  ## fetch hourly weather for outdoor runs not yet covered
 	$(VENV)/running-pipeline sync-weather
 
@@ -65,7 +69,7 @@ dbt-docs: dbt-profile      ## generate + serve dbt docs locally
 app:           ## launch the Streamlit dashboard (three views, marts only)
 	$(VENV)/streamlit run app/streamlit_app.py
 
-all: sync-activities sync-weather sync-streams dbt-build  ## full refresh: all syncs + dbt
+all: sync-activities backfill-coordinates sync-weather sync-streams dbt-build  ## full refresh: all syncs + dbt
 
 test:
 	$(VENV)/pytest

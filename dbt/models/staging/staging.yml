@@ -80,15 +80,29 @@ models:
         description: Strava trainer flag — treadmill/indoor-equipment activity.
         tests: [not_null]
       - name: start_latitude
-        description: Raw start latitude (full precision); NULL when no GPS.
+        description: >
+          Start latitude (full precision): the resolved
+          activity_coordinates value when present (covers the
+          map-privacy case, where the payload's start_latlng arrives
+          empty and the coordinate is decoded from the detail
+          polyline), else the payload's start_latlng; NULL when no
+          route data exists.
         tests:
           - accepted_range:
               arguments: {min_value: -90, max_value: 90}
       - name: start_longitude
-        description: Raw start longitude (full precision); NULL when no GPS.
+        description: Start longitude (full precision); same provenance as start_latitude.
         tests:
           - accepted_range:
               arguments: {min_value: -180, max_value: 180}
+      - name: coordinate_source
+        description: >
+          Provenance of the start coordinate: start_latlng /
+          map_polyline / unavailable (explicitly attempted, no route
+          data) / NULL (never attempted and no payload coordinates).
+        tests:
+          - accepted_values:
+              arguments: {values: [start_latlng, map_polyline, unavailable]}
       - name: fetched_at
         description: When ingestion last wrote this row.
         tests: [not_null]

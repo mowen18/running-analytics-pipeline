@@ -29,6 +29,22 @@ sources:
             tests: [not_null]
       - name: sync_state
         description: Per-job sync watermarks (Phase 1); not modeled downstream.
+      - name: activity_coordinates
+        description: >
+          Resolved run-start coordinate per activity with explicit
+          provenance: start_latlng from the payload, map_polyline decoded
+          from the detail endpoint (the map-privacy fallback), or an
+          explicit unavailable row. Absent row = not yet attempted.
+        columns:
+          - name: activity_id
+            description: Strava activity id (one resolution per activity).
+            tests: [unique, not_null]
+          - name: source
+            description: start_latlng / map_polyline / unavailable.
+            tests:
+              - not_null
+              - accepted_values:
+                  arguments: {values: [start_latlng, map_polyline, unavailable]}
       - name: streams
         description: >
           One row per attempted stream fetch (Phase 5). success = full

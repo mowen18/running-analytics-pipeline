@@ -255,6 +255,16 @@ class StravaClient:
                 )
             page_number += 1
 
+    def get_activity_detail(self, activity_id: int) -> dict | None:
+        """DetailedActivity for one activity; None when it no longer exists.
+
+        Needed for coordinate resolution: when the map-privacy setting
+        strips start_latlng from every payload, the detail response still
+        carries the encoded route in map.polyline.
+        """
+        response = self._api_get(f"/activities/{activity_id}", none_on_404=True)
+        return None if response is None else response.json()
+
     def get_activity_streams(
         self, activity_id: int, keys: tuple[str, ...] = STREAM_TYPES
     ) -> dict | None:
