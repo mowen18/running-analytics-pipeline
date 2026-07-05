@@ -6,11 +6,11 @@
   one, stop and ask — do not silently deviate.
 
 ## Current status
-- Phases 0–4 are complete — MVP / Release 1.0. Next: Streamlit views
-  (Phase 6) and/or streams + cardiac drift (Phase 5, Release 1.1)
-- Efficiency marts (mart_weekly_training, mart_efficiency_trend,
-  mart_efficiency_by_temp_band) are structurally empty of trend data
-  until HR-carrying runs exist — see the no-HR note below
+- Phases 0–5 are complete (Release 1.1). Next: Phase 6 — Streamlit
+  views (max 3, marts only, per D19) and portfolio docs
+- Efficiency and drift marts are structurally empty of trend data until
+  HR-carrying runs exist — see the no-HR note below; sync-streams
+  likewise reports eligible=0 (D15 requires HR)
 - All activities ingested so far are indoor (trainer=true, no coordinates),
   so `sync-weather` correctly reports eligible_runs=0 until the first
   outdoor GPS run — that is expected, not a bug
@@ -35,6 +35,8 @@
 - Sync:    `make sync-activities` (incremental) / `make reconcile` (full)
 - Weather: `make sync-weather` (incremental by nature) /
   `make reconcile-weather` (re-fetch cached hours)
+- Streams: `make sync-streams` (resumable; success/unavailable are
+  terminal statuses in raw_strava.streams, failed retries next run)
 - CLI:     `running-pipeline athlete` / `running-pipeline authorize` /
   `running-pipeline sync-activities [--full]` /
   `running-pipeline sync-weather [--full]`

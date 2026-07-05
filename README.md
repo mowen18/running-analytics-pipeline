@@ -6,7 +6,7 @@ Pipeline-first: the deliverables are ingestion, warehouse models, metrics,
 tests, and docs — the dashboard is a thin cap.
 
 **Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are locked).
-**Status:** Phase 4 complete — MVP (Release 1.0): ingestion, dbt models, and aerobic-efficiency marts. Release 1.1 (streams + cardiac drift) and the Streamlit views are next.
+**Status:** Phase 5 complete — Release 1.1: stream ingestion and cardiac-drift models on top of the MVP. Phase 6 (Streamlit views + portfolio docs) is next.
 
 ## Prerequisites
 
@@ -67,6 +67,7 @@ make sync-activities  # incremental Strava activity sync (14-day overlap)
 make reconcile        # full reconciliation from SYNC_START_DATE
 make sync-weather     # fetch hourly weather for outdoor runs not yet covered
 make reconcile-weather # re-fetch weather even for already-cached hours
+make sync-streams     # backfill activity streams for drift-eligible runs
 make dbt-build        # build all dbt models and run their tests
 make dbt-test         # dbt tests only
 make dbt-freshness    # source freshness (raw fetched_at ages)
@@ -159,6 +160,10 @@ same `.env` contract as the Python pipeline — no separate credentials.
 | Mart | `mart_efficiency_trend` | `analytics` | one row per week + 28-day rolling median |
 | Mart | `mart_efficiency_by_temp_band` | `analytics` | one row per D14 temp band (+ explicit weather-unavailable row) |
 | Seed | `temperature_bands` | `analytics` | the D14 bands, defined once, joined by range everywhere |
+| Intermediate | `int_run_stream_samples` | `intermediate` | one row per activity + aligned stream sample |
+| Intermediate | `int_run_drift_halves` | `intermediate` | one row per drift candidate + halves and exclusion verdict |
+| Mart | `mart_run_drift` | `analytics` | one row per analyzed drift run |
+| Mart | `mart_drift_trend` | `analytics` | one row per week of drift runs + rolling median |
 
 Conventions worth knowing: the running-activity filter
 (Run/TrailRun/VirtualRun) is applied after staging, never in it; weather
@@ -225,3 +230,39 @@ comparison.
 heart-rate data (the Apple Health → Strava path drops HR), so no run
 qualifies yet and the efficiency marts are structurally empty — correct
 behavior that resolves as soon as HR-carrying runs are recorded.
+
+## Stream ingestion and cardiac drift
+
+`make sync-streams` backfills time-series streams (time, heart rate,
+smoothed velocity, moving flag, grade) for drift-eligible runs per D15:
+running activity, heart rate present, moving time ≥ 45 min, within the
+historical window. The backfill is **resumable by construction**: each
+activity's outcome commits as its own row in `raw_strava.streams` with
+an explicit status — `success` and `unavailable` (Strava has no streams
+for that activity; that never changes) are terminal, `failed` is retried
+automatically next run, and an absent row means not yet attempted. At
+most `STREAM_MAX_ACTIVITIES_PER_RUN` (default 50) activities per
+invocation; rate limits stop the run cleanly between fetches with the
+same exit-code-3 contract as the other syncs.
+
+**Cardiac drift (decoupling)** — per D16, each analyzed run drops
+non-moving samples, trims the first 10 minutes (warm-up) and final
+5 minutes (cool-down), requires ≥ 30 minutes remaining, splits the
+window into two equal-duration halves, and computes efficiency per half:
+
+```text
+decoupling_pct = (first_half_efficiency − second_half_efficiency)
+                 / first_half_efficiency × 100
+```
+
+**Sign convention (D17): positive = efficiency declined in the second
+half; near zero = stable; negative = the second half improved.** A
+rising decoupling trend over comparable easy runs is the observational
+signal of interest — never proof of a fitness change on its own.
+
+Coverage and pause thresholds (the two checks D16 leaves unquantified)
+are dbt vars: average sample spacing in the window ≤ 3 s, non-moving
+share ≤ 25 %. Every drift candidate that can't be analyzed carries a
+deterministic exclusion reason in `int_run_drift_halves`; drift trend
+weeks below the D12 run count are flagged `is_sufficient = false` and
+hidden by the dashboard, never deleted.

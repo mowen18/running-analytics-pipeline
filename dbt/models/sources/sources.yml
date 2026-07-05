@@ -29,6 +29,23 @@ sources:
             tests: [not_null]
       - name: sync_state
         description: Per-job sync watermarks (Phase 1); not modeled downstream.
+      - name: streams
+        description: >
+          One row per attempted stream fetch (Phase 5). success = full
+          key_by_type payload stored; unavailable = Strava has no
+          streams for the activity (terminal); failed = transient error,
+          retried by the next backfill. An absent row means not yet
+          attempted — the three states stay distinguishable.
+        columns:
+          - name: activity_id
+            description: Strava activity id (one attempt row per activity).
+            tests: [unique, not_null]
+          - name: ingestion_status
+            description: success / failed / unavailable (CHECK-constrained).
+            tests:
+              - not_null
+              - accepted_values:
+                  arguments: {values: [success, failed, unavailable]}
 
   - name: raw_weather
     description: >

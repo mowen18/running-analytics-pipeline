@@ -124,3 +124,57 @@ models:
         description: Average pace context for the band.
       - name: avg_hr_bpm
         description: Average HR context for the band.
+
+  - name: mart_run_drift
+    description: >
+      One row per successfully analyzed drift run: decoupling percentage
+      with per-half detail, duration/distance/temperature context, and
+      the data-quality numbers behind the value (sample counts, paused
+      fraction, average sample gap). Excluded candidates are NOT here —
+      their deterministic reasons live in int_run_drift_halves, which
+      the dashboard's data-quality panel reads. D17 sign convention:
+      positive = efficiency declined in the second half.
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per analyzed run).
+        tests: [unique, not_null]
+      - name: decoupling_pct
+        description: >
+          (first-half efficiency − second-half efficiency) / first-half
+          efficiency × 100. Positive = second-half decline (D17).
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: -100, max_value: 100}
+      - name: analysis_window_min
+        description: Trimmed D16 analysis window length, minutes.
+      - name: temperature_f
+        description: Matched run-start temperature; NULL when unmatched.
+      - name: weather_available
+        description: Whether weather context exists for this run.
+        tests: [not_null]
+
+  - name: mart_drift_trend
+    description: >
+      One row per training week with any analyzed drift run: median
+      decoupling, the 28-day rolling median, sample counts, and average
+      duration/temperature context. is_sufficient applies the D12
+      threshold; the dashboard hides insufficient trend points
+      (acceptance criterion 7) while the rows remain queryable here.
+    columns:
+      - name: week_start_date
+        description: Monday of the local training week (grain).
+        tests: [unique, not_null]
+      - name: drift_run_count
+        description: Analyzed drift runs in the week.
+        tests: [not_null]
+      - name: median_decoupling_pct
+        description: The week's median decoupling (D17 sign convention).
+      - name: rolling_28d_median_decoupling_pct
+        description: Median across analyzed runs in the trailing 28 days (D13 pattern).
+      - name: rolling_28d_drift_run_count
+        description: Sample size behind the rolling median.
+        tests: [not_null]
+      - name: is_sufficient
+        description: drift_run_count >= min_weekly_qualifying_runs (D12).
+        tests: [not_null]

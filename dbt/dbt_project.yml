@@ -26,6 +26,14 @@ vars:
   long_run_min_moving_minutes: 45
   min_weekly_qualifying_runs: 2
   trend_window_days: 28
+  # Drift analysis window (D16) and the two checks D16 left
+  # unquantified, settled as: coverage = average sample spacing within
+  # the window <= 3 s; excessive pauses = non-moving share > 25%.
+  drift_warmup_minutes: 10
+  drift_cooldown_minutes: 5
+  drift_min_window_minutes: 30
+  drift_max_avg_sample_gap_s: 3
+  drift_max_paused_fraction: 0.25
 
 # Layers map onto the five locked schemas (D3). generate_schema_name is
 # overridden so these names are used exactly, without dbt's default

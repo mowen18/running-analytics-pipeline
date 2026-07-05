@@ -7,8 +7,8 @@ VENV := .venv/bin
 DBT = cd dbt && set -a && . ../.env && set +a && ../$(VENV)/dbt
 
 .PHONY: help up down bootstrap athlete authorize sync-activities reconcile \
-	sync-weather reconcile-weather dbt-profile dbt-build dbt-test \
-	dbt-freshness dbt-docs test lint format
+	sync-weather reconcile-weather sync-streams dbt-profile dbt-build \
+	dbt-test dbt-freshness dbt-docs test lint format
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | sed 's/:.*//' | sort
@@ -43,6 +43,9 @@ sync-weather:  ## fetch hourly weather for outdoor runs not yet covered
 
 reconcile-weather:  ## re-fetch weather even for already-cached hours
 	$(VENV)/running-pipeline sync-weather --full
+
+sync-streams:  ## backfill activity streams for drift-eligible runs (resumable)
+	$(VENV)/running-pipeline sync-streams
 
 dbt-profile:   ## create dbt/profiles.yml from the example if absent
 	@test -f dbt/profiles.yml || cp dbt/profiles.yml.example dbt/profiles.yml

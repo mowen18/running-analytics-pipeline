@@ -33,6 +33,9 @@ EXPIRY_MARGIN_SECONDS = 60
 REQUEST_TIMEOUT_SECONDS = 30
 
 ACTIVITIES_PER_PAGE_MAX = 200  # Strava's documented maximum
+# Stream types for drift analysis (plan Phase 5): elapsed seconds, HR,
+# smoothed velocity, moving flag, grade.
+STREAM_TYPES = ("time", "heartrate", "velocity_smooth", "moving", "grade_smooth")
 # Backoff between retries of transient failures (connection errors, 5xx);
 # one initial attempt plus one retry per entry.
 TRANSIENT_RETRY_BACKOFF_SECONDS = (1, 2, 4)
@@ -142,6 +145,10 @@ class StravaClient:
         self._store = store or TokenStore(settings.token_file)
         self._session = requests.Session()
         self._sleep = sleep  # injectable so tests don't wait out backoffs
+        # Usage from the most recent API response; lets single-request
+        # callers (stream backfill) stop cleanly between requests the way
+        # iter_activity_pages stops between pages.
+        self.last_rate_limit_statuses: list[RateLimitStatus] = []
 
     # ── OAuth ─────────────────────────────────────────────────────────
 
@@ -248,7 +255,29 @@ class StravaClient:
                 )
             page_number += 1
 
-    def _api_get(self, path: str, params: dict | None = None) -> requests.Response:
+    def get_activity_streams(
+        self, activity_id: int, keys: tuple[str, ...] = STREAM_TYPES
+    ) -> dict | None:
+        """Streams for one activity, keyed by type; None when Strava has none.
+
+        A 404 means the activity has no stream data (manual entries and
+        some app-synced activities never get streams) — that is a
+        terminal "unavailable", not an error.
+        """
+        response = self._api_get(
+            f"/activities/{activity_id}/streams",
+            params={"keys": ",".join(keys), "key_by_type": "true"},
+            none_on_404=True,
+        )
+        return None if response is None else response.json()
+
+    def rate_limit_approaching(self) -> list[RateLimitStatus]:
+        """Statuses from the last response that crossed the stop fraction."""
+        return [s for s in self.last_rate_limit_statuses if s.approaching()]
+
+    def _api_get(
+        self, path: str, params: dict | None = None, *, none_on_404: bool = False
+    ) -> requests.Response | None:
         """GET an API path with auth, bounded transient retries, and 429 handling.
 
         401 forces one token refresh then one retry (the access token may
@@ -302,11 +331,15 @@ class StravaClient:
                 raise RateLimitExceeded(
                     f"Strava rate limit exceeded (HTTP 429 on GET {path}): {detail}"
                 )
+            if response.status_code == 404 and none_on_404:
+                self.last_rate_limit_statuses = _rate_limit_statuses(response.headers)
+                return None
             if response.status_code != 200:
                 raise StravaApiError(
                     f"Strava API request failed (HTTP {response.status_code}) "
                     f"on GET {path}: {_safe_error_body(response)}"
                 )
+            self.last_rate_limit_statuses = _rate_limit_statuses(response.headers)
             return response
 
 

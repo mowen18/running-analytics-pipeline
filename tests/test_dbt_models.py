@@ -32,7 +32,7 @@ TEST_DB = "running_analytics_test"  # the conftest scratch database
 
 @pytest.fixture
 def db(integration_db):
-    integration_db.execute("TRUNCATE raw_strava.activities, raw_weather.hourly")
+    integration_db.execute("TRUNCATE raw_strava.activities, raw_strava.streams, raw_weather.hourly")
     integration_db.commit()
     return integration_db
 
@@ -279,6 +279,139 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     assert bands["warm"][0] == 1  # 70.1°F
     assert bands["no_weather"][0] == 1  # explicit, not silently dropped
     assert sum(count for count, _ in bands.values()) == 5  # conservation
+
+
+def insert_stream(db, activity_id, *, status="success", samples=None):
+    """Store a synthetic key_by_type streams payload (or a status-only row)."""
+    payload = {}
+    sample_count = None
+    if samples is not None:
+        elapsed, hr, velocity, moving = samples
+        sample_count = len(elapsed)
+        payload = {
+            "time": {"data": elapsed, "original_size": sample_count},
+            "heartrate": {"data": hr, "original_size": sample_count},
+            "velocity_smooth": {"data": velocity, "original_size": sample_count},
+            "moving": {"data": moving, "original_size": sample_count},
+            "grade_smooth": {"data": [0.0] * sample_count, "original_size": sample_count},
+        }
+    db.execute(
+        """
+        INSERT INTO raw_strava.streams
+            (activity_id, payload, sample_count, fetched_at, ingestion_status)
+        VALUES (%s, %s, %s, now(), %s)
+        """,
+        (activity_id, json.dumps(payload), sample_count, status),
+    )
+
+
+def steady_stream(*, seconds=3600, step=1, first_half_hr=140.0, second_half_hr=150.0, pause=None):
+    """A hand-checkable synthetic run at constant 3.0 m/s (180 m/min).
+
+    The D16 window for a 3600 s run is 600..3300 s, midpoint 1950. HR
+    switches exactly at the midpoint, and the warm-up/cool-down carry
+    absurd values (10 m/s sprint, 0.5 m/s crawl) so any trimming bug
+    changes the expected numbers. `pause` marks [start, end) elapsed
+    seconds as non-moving. Efficiency per half = 180 / HR, so
+    decoupling_pct = (1 - first_half_hr / second_half_hr) * 100.
+    """
+    elapsed = list(range(0, seconds, step))
+    hr, velocity, moving = [], [], []
+    for t in elapsed:
+        if t < 600:
+            hr.append(120.0)
+            velocity.append(10.0)  # would inflate half 1 if trimming broke
+        elif t > seconds - 300:
+            hr.append(190.0)
+            velocity.append(0.5)  # would poison half 2 if trimming broke
+        else:
+            hr.append(first_half_hr if t <= (600 + seconds - 300) / 2 else second_half_hr)
+            velocity.append(3.0)
+        moving.append(not (pause and pause[0] <= t < pause[1]))
+    return elapsed, hr, velocity, moving
+
+
+def drift_run(db, activity_id, *, day, moving_time=3600, hr=145.0):
+    """An easy-qualifying, drift-length activity (no weather needed)."""
+    insert_activity(
+        db,
+        activity_id,
+        start=f"{day}T09:00:00Z",
+        start_local=f"{day}T04:00:00Z",
+        start_latlng=None,
+        trainer=False,
+        distance=10800.0,
+        moving_time=moving_time,
+        elapsed_time=moving_time + 100,
+        average_heartrate=hr,
+    )
+
+
+@pytest.mark.integration
+def test_drift_decoupling_formula_and_analysis_window(db):
+    # Two clean runs in one week: decoupling = (1 - HR1/HR2) * 100
+    # exactly, because speed is constant across the window.
+    drift_run(db, 1, day="2026-06-15")
+    insert_stream(db, 1, samples=steady_stream())  # 140 -> 150: 6.667 %
+    drift_run(db, 2, day="2026-06-17")
+    insert_stream(db, 2, samples=steady_stream(second_half_hr=145.0))  # 3.448 %
+    # Excluded candidates, one per D16 ladder rung that data can reach:
+    drift_run(db, 3, day="2026-06-18")  # no streams row at all
+    drift_run(db, 4, day="2026-06-19")
+    insert_stream(db, 4, status="unavailable")
+    drift_run(db, 5, day="2026-06-20", moving_time=2700)  # 45 min run,
+    insert_stream(db, 5, samples=steady_stream(seconds=2400))  # 25-min window
+    drift_run(db, 6, day="2026-06-21")
+    insert_stream(db, 6, samples=steady_stream(pause=(600, 1420)))  # ~30 % paused
+    drift_run(db, 7, day="2026-06-22")
+    insert_stream(db, 7, samples=steady_stream(step=5))  # 5 s gaps > 3 s max
+    # Not a candidate: short easy run (< 45 min) must not appear at all.
+    insert_activity(
+        db, 8, start_latlng=None, average_heartrate=140.0, moving_time=2400, elapsed_time=2500
+    )
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    halves = {
+        row[0]: (row[1], row[2])
+        for row in db.execute(
+            "SELECT activity_id, decoupling_pct, exclusion_reason "
+            "FROM intermediate.int_run_drift_halves"
+        ).fetchall()
+    }
+    assert set(halves) == {1, 2, 3, 4, 5, 6, 7}  # 8 is not a candidate
+
+    # The formula, exactly (acceptance criterion 5).
+    assert float(halves[1][0]) == pytest.approx((1 - 140 / 150) * 100, abs=0.01)
+    assert float(halves[2][0]) == pytest.approx((1 - 140 / 145) * 100, abs=0.01)
+
+    # Deterministic reasons, first failing check per run (criterion 4).
+    assert halves[3] == (None, "streams not yet loaded")
+    assert halves[4] == (None, "streams unavailable from Strava")
+    assert halves[5][1] == "analysis window under 30 minutes after trimming"
+    assert halves[6][1] == "excessive pauses (non-moving share above 0.25)"
+    assert halves[7][1] == "insufficient sample coverage"
+
+    # The documented window: 3600 s run -> 600..3300 -> 45 minutes.
+    (window_min, first_hr, second_hr) = db.execute(
+        "SELECT analysis_window_min, first_half_hr_bpm, second_half_hr_bpm "
+        "FROM analytics.mart_run_drift WHERE activity_id = 1"
+    ).fetchone()
+    assert float(window_min) == 45.0
+    assert (float(first_hr), float(second_hr)) == (140.0, 150.0)  # trim held
+
+    # Only analyzed runs reach the mart; the trend week is sufficient.
+    assert db.execute("SELECT count(*) FROM analytics.mart_run_drift").fetchone()[0] == 2
+    (count, median, sufficient) = db.execute(
+        "SELECT drift_run_count, median_decoupling_pct, is_sufficient "
+        "FROM analytics.mart_drift_trend WHERE week_start_date = '2026-06-15'"
+    ).fetchone()
+    assert count == 2
+    expected_median = ((1 - 140 / 150) * 100 + (1 - 140 / 145) * 100) / 2
+    assert float(median) == pytest.approx(expected_median, abs=0.01)
+    assert sufficient is True
 
 
 @pytest.mark.integration

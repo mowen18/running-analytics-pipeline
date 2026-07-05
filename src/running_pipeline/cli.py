@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 import click
 import psycopg
 
-from running_pipeline import activity_ingestion, weather_ingestion
+from running_pipeline import activity_ingestion, stream_ingestion, weather_ingestion
 from running_pipeline.config import load_settings
 from running_pipeline.database import get_connection
 from running_pipeline.strava_client import (
@@ -87,6 +87,41 @@ def sync_activities(full: bool):
     )
     if report.stopped_early:
         click.echo("Committed pages were kept; re-run later to finish.")
+        sys.exit(3)
+
+
+@cli.command("sync-streams")
+def sync_streams():
+    """Backfill activity streams for drift-eligible runs (resumable)."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stderr,
+    )
+    settings = load_settings()
+    client = StravaClient(settings)
+    try:
+        with get_connection(settings) as conn:
+            report = stream_ingestion.sync_streams(settings, client, conn)
+    except StravaAuthError as exc:
+        raise click.ClickException(
+            f"{exc}\nIf the refresh token is invalid or under-scoped, run "
+            "`running-pipeline authorize` to re-authorize."
+        ) from exc
+    except psycopg.OperationalError as exc:
+        raise click.ClickException(
+            f"Could not reach Postgres: {exc}\nStart it with `make up`."
+        ) from exc
+
+    outcome = "stopped early at the rate limit" if report.stopped_early else "complete"
+    click.echo(
+        f"Stream backfill {outcome}: eligible={report.eligible} "
+        f"succeeded={report.succeeded} unavailable={report.unavailable} "
+        f"failed={report.failed} last_processed="
+        f"{report.last_processed_id if report.last_processed_id is not None else 'none'}"
+    )
+    if report.stopped_early:
+        click.echo("Committed rows were kept; re-run later to resume.")
         sys.exit(3)
 
 
