@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: int_runs_with_weather
+    description: >
+      One row per running activity (Run/TrailRun/VirtualRun — same
+      grain fct_runs inherits), joined to the NEAREST qualifying hourly
+      observation at the run's normalized D7 cell. Qualifying means the
+      observation carries at least one measurement; the explicit
+      all-NULL "archive had no data" rows never match. The model records
+      the match time-difference and flags weather_matched only within
+      60 minutes of the start — beyond that the observation no longer
+      describes the run's start conditions. Indoor and coordinate-less
+      runs remain in the grain, permanently unmatched, with NULL weather
+      — missing stays distinguishable from zero.
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per running activity).
+        tests: [unique, not_null]
+      - name: location_key
+        description: >
+          The run's normalized ~1.1 km cell (D7), derived in SQL to
+          mirror ingestion's Python formatting; NULL when the run has no
+          GPS coordinates.
+      - name: weather_timestamp
+        description: UTC hour of the nearest qualifying observation; NULL when none exists.
+      - name: weather_match_minutes
+        description: >
+          Minutes between the run start and the matched observation
+          hour; NULL when no observation exists at the cell.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: weather_matched
+        description: True only when a qualifying observation lies within 60 minutes.
+        tests: [not_null]

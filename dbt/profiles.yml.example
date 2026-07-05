@@ -1,0 +1,20 @@
+# Copy to dbt/profiles.yml (gitignored) — the Makefile dbt targets do
+# this automatically on first run. All values come from the same .env
+# contract as the Python pipeline (see .env.example); no secrets live in
+# this file, so customizing the copy is only needed for non-standard
+# setups.
+
+running_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5433') | as_number }}"
+      user: "{{ env_var('POSTGRES_USER', 'running_user') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'running_analytics_db') }}"
+      # Default schema only; each layer overrides via +schema in
+      # dbt_project.yml onto the five locked D3 schemas.
+      schema: staging
+      threads: 4

@@ -6,7 +6,7 @@ Pipeline-first: the deliverables are ingestion, warehouse models, metrics,
 tests, and docs — the dashboard is a thin cap.
 
 **Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are locked).
-**Status:** Phase 2 complete — activity ingestion plus hourly weather ingestion. Phase 3 (dbt models) is next.
+**Status:** Phase 3 complete — ingestion plus dbt staging/intermediate/core models. Phase 4 (efficiency metrics) is next.
 
 ## Prerequisites
 
@@ -67,6 +67,10 @@ make sync-activities  # incremental Strava activity sync (14-day overlap)
 make reconcile        # full reconciliation from SYNC_START_DATE
 make sync-weather     # fetch hourly weather for outdoor runs not yet covered
 make reconcile-weather # re-fetch weather even for already-cached hours
+make dbt-build        # build all dbt models and run their tests
+make dbt-test         # dbt tests only
+make dbt-freshness    # source freshness (raw fetched_at ages)
+make dbt-docs         # generate + serve dbt documentation locally
 make test             # pytest (all external HTTP mocked; DB-integration
                       # tests skip visibly when Postgres is down)
 make lint             # ruff check
@@ -136,6 +140,30 @@ places, a ~1.1 km cell, per decision D7), and batches the remainder into
 one archive request per location and contiguous date range. Re-runs are
 idempotent and repeated runs in the same cell hit the cache with zero
 requests.
+
+## Warehouse models (dbt)
+
+The dbt project lives in `dbt/` (decision D4) and is driven entirely
+through the Make targets above; `dbt/profiles.yml` is auto-copied from
+the committed example on first run and reads connection values from the
+same `.env` contract as the Python pipeline — no separate credentials.
+
+| Layer | Model | Schema | Grain |
+|---|---|---|---|
+| Staging | `stg_strava__activities` | `staging` | one row per activity, any sport type |
+| Staging | `stg_weather__hourly` | `staging` | one row per D7 cell + UTC hour, metric & imperial units |
+| Intermediate | `int_runs_with_weather` | `intermediate` | one row per running activity + nearest qualifying observation |
+| Core | `fct_runs` | `analytics` | one row per running activity, derived measures + eligibility flags |
+
+Conventions worth knowing: the running-activity filter
+(Run/TrailRun/VirtualRun) is applied after staging, never in it; weather
+matches the *nearest* observation that actually carries measurements
+(explicit "archive had no data" rows never match) and only counts as
+matched within 60 minutes of the run's start; training weeks are local
+wall-clock (`week_start_date` = Monday of the local week); metric
+thresholds (D9 easy-run rules, the 45-minute long-run definition) are
+dbt vars, never inline SQL. Every measurement column carries an explicit
+unit suffix, and missing HR/weather stays NULL through every layer.
 
 **Missing weather is explicit, never zero.** Hours the archive has no data
 for (recent runs fall inside its ~5-day publication delay) are stored as

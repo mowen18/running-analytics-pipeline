@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: fct_runs
+    description: >
+      One row per Strava running activity (Run/TrailRun/VirtualRun),
+      indoor and outdoor alike, with derived training measures, weather
+      context, and eligibility flags. Missing heart rate and missing
+      weather remain NULL end to end — distinguishable from zero. NOTE
+      for current data: the entire history to date is indoor without
+      heart rate, so weather_available and easy_run_eligible are false
+      everywhere until outdoor / HR-recorded runs exist; that is the
+      data, not a modeling defect.
+    columns:
+      - name: activity_id
+        description: Strava activity id (grain of the table).
+        tests: [unique, not_null]
+      - name: week_start_date
+        description: >
+          Monday of the run's local training week (derived from
+          start_date_local — a 9 PM Tuesday run belongs to Tuesday even
+          when it is already Wednesday in UTC).
+        tests: [not_null]
+      - name: start_month
+        description: Calendar month (1-12) of the local start time.
+      - name: start_year
+        description: Calendar year of the local start time.
+      - name: distance_mi
+        description: Distance in miles (meters / 1609.344, 2 dp).
+      - name: moving_time_min
+        description: Moving time in minutes (1 dp).
+      - name: pace_min_per_mi
+        description: >
+          Pace in minutes per mile; NULL when distance or moving time is
+          zero (guarded division, never an error).
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: speed_m_per_min
+        description: Speed in meters per minute; NULL when moving time is zero.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: elevation_gain_m_per_mi
+        description: Elevation gain per mile (m/mi); NULL when distance is zero.
+      - name: average_hr_bpm
+        description: Average heart rate (bpm); NULL when the source has no HR.
+      - name: weather_available
+        description: >
+          True when a qualifying observation within 60 minutes exists at
+          the run's D7 cell (int_runs_with_weather.weather_matched).
+        tests: [not_null]
+      - name: weather_match_minutes
+        description: Minutes between run start and the matched observation.
+      - name: temperature_c
+        description: Matched observation air temperature, °C; NULL when unmatched.
+      - name: easy_run_eligible
+        description: >
+          Easy-run eligibility per D9, all thresholds dbt vars: HR
+          present and <= easy_hr_max (152), HR within 90-200 sanity
+          band, moving time >= 30 min, not tagged race/workout, pace
+          within 4:00-20:00 min/mi.
+        tests: [not_null]
+      - name: long_run_eligible
+        description: >
+          Moving time >= long_run_min_moving_minutes (45, aligned with
+          D15's stream threshold so "long run" keeps one meaning in
+          Phase 5). Deliberately duration-based, not Strava's manual
+          workout_type = 2 tag.
+        tests: [not_null]
+      - name: fetched_at
+        description: Ingestion timestamp carried from the raw layer.
+        tests: [not_null]

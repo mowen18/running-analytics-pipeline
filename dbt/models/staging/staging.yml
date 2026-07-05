@@ -1,0 +1,150 @@
+version: 2
+
+models:
+  - name: stg_strava__activities
+    description: >
+      One row per Strava activity of ANY sport type, with analytical
+      fields typed out of the raw JSONB payload. The running-activity
+      filter rule — sport_type in ('Run', 'TrailRun', 'VirtualRun') — is
+      deliberately NOT applied here; it is applied (and further
+      documented) in int_runs_with_weather and fct_runs, so staging stays
+      a faithful, typed view of the source. All units carry explicit
+      suffixes (_m, _s, _bpm, _m_per_s).
+    columns:
+      - name: activity_id
+        description: Strava activity id.
+        tests: [unique, not_null]
+      - name: activity_name
+        description: Activity title as entered or auto-generated.
+      - name: sport_type
+        description: >
+          Strava sport_type (Run, TrailRun, VirtualRun, Walk, Workout,
+          ...). The authoritative type field; legacy_type is the
+          deprecated older field kept for reference.
+        tests: [not_null]
+      - name: workout_type
+        description: >
+          Strava's manual run tag: NULL/0 default, 1 race, 2 long run,
+          3 workout. NULL means untagged, not "default run".
+      - name: start_date_utc
+        description: Activity start instant (timestamptz, UTC).
+        tests: [not_null]
+      - name: start_date_local
+        description: >
+          Local wall-clock start time (naive timestamp). Source value
+          carries a misleading 'Z' suffix that is dropped on cast.
+      - name: timezone_label
+        description: Strava's decorated timezone string, e.g. "(GMT-06:00) America/Chicago".
+      - name: distance_m
+        description: Distance in meters. Zero is legitimate for non-run types (e.g. Workout).
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: moving_time_s
+        description: Moving time in seconds.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: elapsed_time_s
+        description: Elapsed (wall-clock) time in seconds; >= moving_time_s.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: elevation_gain_m
+        description: Total elevation gain in meters.
+      - name: average_speed_m_per_s
+        description: Average speed in meters per second.
+      - name: max_speed_m_per_s
+        description: Max speed in meters per second.
+      - name: has_heartrate
+        description: >
+          True when the source recorded heart rate. NOTE: false for the
+          entire current history (Apple Health -> Strava sync carries no
+          HR), so HR columns are NULL everywhere until runs are recorded
+          with HR — expected, not a defect.
+        tests: [not_null]
+      - name: average_hr_bpm
+        description: >
+          Average heart rate (bpm) when has_heartrate, else NULL — never
+          zero. Broad instrument-sanity range; the tighter 90–200
+          eligibility band (D9) is a business rule applied in fct_runs.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 25, max_value: 250}
+      - name: max_hr_bpm
+        description: Max heart rate (bpm) when has_heartrate, else NULL.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 25, max_value: 250}
+      - name: is_trainer
+        description: Strava trainer flag — treadmill/indoor-equipment activity.
+        tests: [not_null]
+      - name: start_latitude
+        description: Raw start latitude (full precision); NULL when no GPS.
+        tests:
+          - accepted_range:
+              arguments: {min_value: -90, max_value: 90}
+      - name: start_longitude
+        description: Raw start longitude (full precision); NULL when no GPS.
+        tests:
+          - accepted_range:
+              arguments: {min_value: -180, max_value: 180}
+      - name: fetched_at
+        description: When ingestion last wrote this row.
+        tests: [not_null]
+
+  - name: stg_weather__hourly
+    description: >
+      One row per normalized ~1.1 km cell (D7) and UTC hour, exposing
+      each D8 measurement in metric and imperial with explicit unit
+      suffixes. Rows with has_measurements = false are the explicit
+      "archive had no data" markers — real rows, distinguishable from
+      zero, per the data-quality principles.
+    columns:
+      - name: location_key
+        description: "'{lat_2dp}_{lon_2dp}' cell key, as produced by ingestion."
+        tests: [not_null]
+      - name: latitude
+        description: Cell latitude, rounded to 2 dp (matches the key).
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: -90, max_value: 90}
+      - name: longitude
+        description: Cell longitude, rounded to 2 dp (matches the key).
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: -180, max_value: 180}
+      - name: weather_timestamp
+        description: UTC start of the observation hour.
+        tests: [not_null]
+      - name: temperature_c
+        description: Air temperature, °C. NULL = archive had no data.
+        tests:
+          - accepted_range:
+              arguments: {min_value: -60, max_value: 60}
+      - name: temperature_f
+        description: Air temperature, °F (derived; 1 dp).
+      - name: apparent_temperature_c
+        description: Feels-like temperature, °C.
+      - name: apparent_temperature_f
+        description: Feels-like temperature, °F (derived; 1 dp).
+      - name: relative_humidity_pct
+        description: Relative humidity, percent.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 100}
+      - name: wind_speed_kph
+        description: Wind speed at 10 m, km/h.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: wind_speed_mph
+        description: Wind speed at 10 m, mph (derived; 1 dp).
+      - name: has_measurements
+        description: True when at least one measurement is non-NULL.
+        tests: [not_null]
+      - name: fetched_at
+        description: When ingestion last wrote this row.
+        tests: [not_null]

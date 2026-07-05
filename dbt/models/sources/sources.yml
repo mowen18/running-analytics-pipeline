@@ -1,0 +1,56 @@
+version: 2
+
+sources:
+  - name: raw_strava
+    description: >
+      Raw Strava ingestion layer (Phase 1). Full API payloads in JSONB
+      with sync-critical fields promoted to typed columns; one row per
+      activity, idempotently upserted.
+    schema: raw_strava
+    tables:
+      - name: activities
+        description: >
+          One row per Strava activity of any sport type (the run filter
+          is a staging concern, not an ingestion one). payload holds the
+          complete SummaryActivity JSON.
+        loaded_at_field: fetched_at
+        freshness:
+          warn_after: {count: 7, period: day}
+          error_after: {count: 30, period: day}
+        columns:
+          - name: activity_id
+            description: Strava activity id (primary key).
+            tests: [unique, not_null]
+          - name: start_date_utc
+            description: Activity start as timestamptz (UTC).
+            tests: [not_null]
+          - name: payload
+            description: Complete API response, unmodified.
+            tests: [not_null]
+      - name: sync_state
+        description: Per-job sync watermarks (Phase 1); not modeled downstream.
+
+  - name: raw_weather
+    description: >
+      Raw Open-Meteo hourly archive layer (Phase 2). One row per 2-dp
+      coordinate cell and UTC hour; the table doubles as the fetch
+      cache. NULL measurements mean the archive had no data for that
+      hour — missing, never zero.
+    schema: raw_weather
+    tables:
+      - name: hourly
+        description: >
+          Hourly observations keyed by (location_key, weather_timestamp).
+          Currently empty until the first outdoor GPS run exists — that
+          is expected, not a defect (all history to date is indoor).
+        loaded_at_field: fetched_at
+        # Freshness intentionally not enforced here: rows only appear
+        # when outdoor runs exist, so an empty/quiet table is normal and
+        # a calendar-based freshness alarm would only produce noise.
+        columns:
+          - name: location_key
+            description: "Normalized ~1.1 km cell per D7: '{lat_2dp}_{lon_2dp}'."
+            tests: [not_null]
+          - name: weather_timestamp
+            description: UTC start of the observation hour.
+            tests: [not_null]

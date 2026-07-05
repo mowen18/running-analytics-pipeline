@@ -44,4 +44,4 @@ notes/
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/
+.vscode/dbt/.user.yml

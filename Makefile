@@ -1,9 +1,14 @@
-# Phase 0–2 targets. dbt/app targets arrive with their phases.
+# Phase 0–3 targets. App targets arrive with their phase.
 
 VENV := .venv/bin
 
+# dbt runs from dbt/ (decision D4) with a local profile auto-copied from
+# the committed example; .env supplies connection values via env_var().
+DBT = cd dbt && set -a && . ../.env && set +a && ../$(VENV)/dbt
+
 .PHONY: help up down bootstrap athlete authorize sync-activities reconcile \
-	sync-weather reconcile-weather test lint format
+	sync-weather reconcile-weather dbt-profile dbt-build dbt-test \
+	dbt-freshness dbt-docs test lint format
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | sed 's/:.*//' | sort
@@ -38,6 +43,21 @@ sync-weather:  ## fetch hourly weather for outdoor runs not yet covered
 
 reconcile-weather:  ## re-fetch weather even for already-cached hours
 	$(VENV)/running-pipeline sync-weather --full
+
+dbt-profile:   ## create dbt/profiles.yml from the example if absent
+	@test -f dbt/profiles.yml || cp dbt/profiles.yml.example dbt/profiles.yml
+
+dbt-build: dbt-profile     ## build all dbt models and run their tests
+	$(DBT) build --profiles-dir .
+
+dbt-test: dbt-profile      ## run dbt tests only
+	$(DBT) test --profiles-dir .
+
+dbt-freshness: dbt-profile ## check source freshness (raw fetched_at ages)
+	$(DBT) source freshness --profiles-dir .
+
+dbt-docs: dbt-profile      ## generate + serve dbt docs locally
+	$(DBT) docs generate --profiles-dir . && $(DBT) docs serve --profiles-dir .
 
 test:
 	$(VENV)/pytest

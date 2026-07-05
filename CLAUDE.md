@@ -6,10 +6,13 @@
   one, stop and ask — do not silently deviate.
 
 ## Current status
-- Phases 0–2 are complete. Phase 3 (dbt staging and core models) is next
+- Phases 0–3 are complete. Phase 4 (aerobic-efficiency metrics) is next
 - All activities ingested so far are indoor (trainer=true, no coordinates),
   so `sync-weather` correctly reports eligible_runs=0 until the first
   outdoor GPS run — that is expected, not a bug
+- No activity has heart-rate data (has_heartrate=false everywhere; the
+  Apple Health → Strava sync carries no HR), so easy_run_eligible is
+  false for the whole current history — also expected, not a bug
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
@@ -37,6 +40,11 @@
   cache (UNIQUE location_key + weather_timestamp); missing weather is a
   row with NULL measurements, never zero and never silently absent;
   everything is requested and matched in UTC
+- dbt:     `make dbt-build` / `make dbt-test` / `make dbt-freshness` /
+  `make dbt-docs` (project in dbt/ per D4; profiles.yml auto-copied from
+  the example, reads .env; metric thresholds are dbt vars in
+  dbt_project.yml; layers map to the D3 schemas via the
+  generate_schema_name override — do not remove it)
 - Rotated Strava tokens live in `.secrets/strava_tokens.json` (gitignored,
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.
