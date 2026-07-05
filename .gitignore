@@ -44,4 +44,7 @@ notes/
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/dbt/.user.yml
+.vscode/
+
+# dbt's machine-local anonymous-id cookie
+dbt/.user.yml
