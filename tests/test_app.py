@@ -47,14 +47,24 @@ def test_decimals_are_coerced_to_float_for_the_browser():
     spec.loader.exec_module(app)  # safe: the shell runs only under __main__
 
     df = app.to_dataframe(
-        [(1, Decimal("0.7838"), None), (2, Decimal("14.5"), Decimal("70.0"))],
-        ["week", "efficiency", "temperature_f"],
+        [
+            (1, Decimal("0.7838"), None, None, "mild"),
+            (2, Decimal("14.5"), Decimal("70.0"), None, None),
+        ],
+        ["week", "efficiency", "temperature_f", "humidity", "band"],
     )
 
     assert df["efficiency"].dtype == "float64"
     assert df["temperature_f"].dtype == "float64"
     assert df["efficiency"].tolist() == [0.7838, 14.5]
     assert pd.isna(df["temperature_f"].iloc[0])  # None -> NaN, shown blank
+    # All-NULL columns (no weather anywhere) must not stay object dtype,
+    # or tables render the literal string "None".
+    assert df["humidity"].dtype == "float64"
+    assert df["humidity"].isna().all()
+    # Text columns go nullable-string so missing text renders blank too.
+    assert df["band"].dtype == "string"
+    assert pd.isna(df["band"].iloc[1])
     assert df["week"].tolist() == [1, 2]  # non-Decimal columns untouched
 
 

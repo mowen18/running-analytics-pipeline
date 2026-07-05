@@ -24,9 +24,22 @@ INK_SECONDARY = "#52514e"
 ORDINAL_RAMP = {"cold": "#86b6ef", "mild": "#2a78d6", "warm": "#104281", "no_weather": "#c3c2b7"}
 GRIDLINE = "#e1e0d9"
 
-# Weekly and daily time axes: date-level tick labels, never hour-level.
-WEEK_AXIS = alt.Axis(format="%b %d", labelAngle=0, tickCount="week")
+# Daily time axis: date-level tick labels, never hour-level.
 DAY_AXIS = alt.Axis(format="%b %d", labelAngle=0, tickCount="day")
+# Pixel padding so edge points/bars aren't clipped against the plot frame.
+TIME_X_SCALE = alt.Scale(padding=20)
+
+
+def week_axis(week_dates) -> alt.Axis:
+    """Ticks exactly under the Monday-based training weeks present.
+
+    Vega's "week" tick interval is Sunday-based, which strands labels
+    between our Monday data points; explicit values fix that, and
+    labelOverlap thins them once the history grows.
+    """
+    values = [{"year": d.year, "month": d.month, "date": d.day} for d in sorted(set(week_dates))]
+    return alt.Axis(format="%b %d", labelAngle=0, values=values, labelOverlap="greedy")
+
 
 # The app may read exactly these relations, all in the analytics schema.
 # The allow-list is the D19 "marts only" rule made mechanical (and is
@@ -57,8 +70,15 @@ def to_dataframe(rows, columns) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=columns)
     for col in df.columns:
         non_null = df[col].dropna()
-        if not non_null.empty and isinstance(non_null.iloc[0], Decimal):
+        if non_null.empty:
+            # All-NULL columns (e.g. weather fields with no outdoor runs)
+            # stay object dtype and would print the literal "None".
             df[col] = df[col].astype("float64")
+        elif isinstance(non_null.iloc[0], Decimal):
+            df[col] = df[col].astype("float64")
+        elif isinstance(non_null.iloc[0], str):
+            # Nullable string dtype renders missing text as blank too.
+            df[col] = df[col].astype("string")
     return df
 
 
@@ -134,12 +154,16 @@ def efficiency_view():
             "2 qualifying easy runs. " + hr_availability_note(load("fct_runs"))
         )
     else:
+        axis = week_axis(sufficient["week_start_date"])
+        # zero=False: values live around 0.7–0.8, and a zero-anchored
+        # axis would flatten the trend into the top sliver of the plot.
+        y_scale = alt.Scale(zero=False, nice=True)
         weekly = (
             alt.Chart(sufficient)
             .mark_circle(size=64, color=GRAY)
             .encode(
-                x=alt.X("week_start_date:T", title="training week", axis=WEEK_AXIS),
-                y=alt.Y("median_efficiency_m_per_beat:Q", title="m per heartbeat"),
+                x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+                y=alt.Y("median_efficiency_m_per_beat:Q", title="m per heartbeat", scale=y_scale),
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
                     alt.Tooltip(
@@ -154,8 +178,8 @@ def efficiency_view():
             alt.Chart(sufficient.dropna(subset=["rolling_28d_median_efficiency"]))
             .mark_line(color=BLUE, strokeWidth=2, point=alt.OverlayMarkDef(color=BLUE, size=36))
             .encode(
-                x=alt.X("week_start_date:T", axis=WEEK_AXIS),
-                y="rolling_28d_median_efficiency:Q",
+                x=alt.X("week_start_date:T", axis=axis, scale=TIME_X_SCALE),
+                y=alt.Y("rolling_28d_median_efficiency:Q", scale=y_scale),
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
                     alt.Tooltip(
@@ -180,9 +204,12 @@ def efficiency_view():
         bands = bands.copy()
         bands["n_label"] = "n=" + bands["qualifying_run_count"].astype(int).astype(str)
         bands["label_x"] = bands["median_efficiency_m_per_beat"].fillna(0)
+        # EncodingSortField (with op), not SortField: a bare SortField is
+        # invalid for ordering an axis by another column in a layered
+        # chart, and Vega-Lite silently falls back to alphabetical.
         band_y = alt.Y(
             "band_label:N",
-            sort=alt.SortField("sort_order"),
+            sort=alt.EncodingSortField(field="sort_order", op="min", order="ascending"),
             title=None,
             axis=alt.Axis(labelLimit=200),
         )
@@ -260,7 +287,12 @@ def weekly_view():
         alt.Chart(weekly)
         .mark_bar(size=24, color=BLUE, cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
         .encode(
-            x=alt.X("week_start_date:T", title="training week", axis=WEEK_AXIS),
+            x=alt.X(
+                "week_start_date:T",
+                title="training week",
+                axis=week_axis(weekly["week_start_date"]),
+                scale=TIME_X_SCALE,
+            ),
             y=alt.Y("total_distance_mi:Q", title="miles"),
             tooltip=[
                 alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
@@ -318,7 +350,7 @@ def drift_view():
         alt.Chart(runs)
         .mark_circle(size=80, color=BLUE)
         .encode(
-            x=alt.X("start_date_local:T", title="run date", axis=DAY_AXIS),
+            x=alt.X("start_date_local:T", title="run date", axis=DAY_AXIS, scale=TIME_X_SCALE),
             y=alt.Y("decoupling_pct:Q", title="decoupling %"),
             tooltip=[
                 alt.Tooltip("start_date_local:T", title="run", format="%b %d"),
@@ -344,7 +376,12 @@ def drift_view():
             alt.Chart(sufficient.dropna(subset=["rolling_28d_median_decoupling_pct"]))
             .mark_line(color=BLUE, strokeWidth=2, point=alt.OverlayMarkDef(color=BLUE, size=36))
             .encode(
-                x=alt.X("week_start_date:T", title="training week", axis=WEEK_AXIS),
+                x=alt.X(
+                    "week_start_date:T",
+                    title="training week",
+                    axis=week_axis(sufficient["week_start_date"]),
+                    scale=TIME_X_SCALE,
+                ),
                 y=alt.Y("rolling_28d_median_decoupling_pct:Q", title="28-day median decoupling %"),
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
@@ -357,6 +394,11 @@ def drift_view():
             .properties(height=280)
         )
         st.altair_chart(themed(alt.layer(zero_rule(), rolling)), use_container_width=True)
+        if len(sufficient) < 2:
+            st.caption(
+                "One sufficient week so far — the rolling median draws a line "
+                "segment once a second sufficient week exists."
+            )
 
     st.dataframe(
         trend, use_container_width=True, hide_index=True, column_config=DRIFT_TREND_COLUMNS
