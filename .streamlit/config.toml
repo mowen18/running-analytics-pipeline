@@ -1,0 +1,6 @@
+# Committed app config (no secrets — those live in the gitignored
+# .streamlit/secrets.toml, which this project doesn't use).
+
+[client]
+# Hide the Deploy button and dev toolbar chrome in the local dashboard.
+toolbarMode = "minimal"

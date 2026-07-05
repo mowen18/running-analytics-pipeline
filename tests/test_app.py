@@ -10,6 +10,7 @@ with the drift fixtures (every view must render its charts).
 import os
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import streamlit as st
 
@@ -31,6 +32,30 @@ def test_app_reads_only_the_analytics_schema():
     for forbidden in ("raw_strava", "raw_weather", "staging.", "intermediate."):
         assert forbidden not in source, f"app source references {forbidden}: marts only (D19)"
     assert 'SELECT * FROM analytics.{table}"' in source  # the single query site
+
+
+def test_decimals_are_coerced_to_float_for_the_browser():
+    """Postgres numerics arrive as Decimal; Arrow ships Decimal as
+    decimal128, which Vega-Lite reads UNSCALED (0.7838 charted as 7838).
+    to_dataframe must coerce to float64 — the regression test for the
+    first-real-data chart bug."""
+    import importlib.util
+    from decimal import Decimal
+
+    spec = importlib.util.spec_from_file_location("streamlit_app", APP_PATH)
+    app = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(app)  # safe: the shell runs only under __main__
+
+    df = app.to_dataframe(
+        [(1, Decimal("0.7838"), None), (2, Decimal("14.5"), Decimal("70.0"))],
+        ["week", "efficiency", "temperature_f"],
+    )
+
+    assert df["efficiency"].dtype == "float64"
+    assert df["temperature_f"].dtype == "float64"
+    assert df["efficiency"].tolist() == [0.7838, 14.5]
+    assert pd.isna(df["temperature_f"].iloc[0])  # None -> NaN, shown blank
+    assert df["week"].tolist() == [1, 2]  # non-Decimal columns untouched
 
 
 def render(view: str):
