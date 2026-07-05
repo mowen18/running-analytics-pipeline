@@ -14,8 +14,8 @@ seed-paths: ["seeds"]
 target-path: target
 clean-targets: [target, dbt_packages]
 
-# Metric thresholds (decision D9 + the agreed 45-minute long-run rule).
-# Overridable with --vars, never hardcoded in model SQL.
+# Metric thresholds (decisions D9, D12, D13 + the agreed 45-minute
+# long-run rule). Overridable with --vars, never hardcoded in model SQL.
 vars:
   easy_hr_max: 152
   easy_min_moving_minutes: 30
@@ -24,6 +24,8 @@ vars:
   hr_sanity_floor: 90
   hr_sanity_ceiling: 200
   long_run_min_moving_minutes: 45
+  min_weekly_qualifying_runs: 2
+  trend_window_days: 28
 
 # Layers map onto the five locked schemas (D3). generate_schema_name is
 # overridden so these names are used exactly, without dbt's default
@@ -37,5 +39,8 @@ models:
       +materialized: view
       +schema: intermediate
     core:
+      +materialized: table
+      +schema: analytics
+    marts:
       +materialized: table
       +schema: analytics

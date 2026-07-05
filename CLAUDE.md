@@ -6,7 +6,11 @@
   one, stop and ask — do not silently deviate.
 
 ## Current status
-- Phases 0–3 are complete. Phase 4 (aerobic-efficiency metrics) is next
+- Phases 0–4 are complete — MVP / Release 1.0. Next: Streamlit views
+  (Phase 6) and/or streams + cardiac drift (Phase 5, Release 1.1)
+- Efficiency marts (mart_weekly_training, mart_efficiency_trend,
+  mart_efficiency_by_temp_band) are structurally empty of trend data
+  until HR-carrying runs exist — see the no-HR note below
 - All activities ingested so far are indoor (trainer=true, no coordinates),
   so `sync-weather` correctly reports eligible_runs=0 until the first
   outdoor GPS run — that is expected, not a bug

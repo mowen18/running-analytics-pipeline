@@ -165,6 +165,122 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     assert (treadmill[4], treadmill[5]) == (False, True)  # no HR; 50 min
 
 
+def outdoor_run(db, activity_id, *, day, hr, cell="12.34_-56.78", temp_c=15.0, **kwargs):
+    """A qualifying-shaped run plus a matching observation at its cell.
+
+    Defaults give speed 200 m/min (10 km in 50 min), so efficiency is
+    200 / hr — hand-checkable. temp_c=None skips the weather row so the
+    run lands in the explicit no_weather pseudo-band.
+    """
+    lat, lon = (float(part) for part in cell.split("_"))
+    insert_activity(
+        db,
+        activity_id,
+        start=f"{day}T09:47:23Z",
+        start_local=f"{day}T04:47:23Z",
+        start_latlng=(lat, lon),
+        average_heartrate=hr,
+        **kwargs,
+    )
+    if temp_c is not None:
+        insert_weather(db, hour=f"{day}T09:00:00+00:00", temperature=temp_c, location=cell)
+
+
+@pytest.mark.integration
+def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
+    # ── Week of Mon 2026-06-01: two qualifying runs (sufficient per D12).
+    # temp_c values are chosen so temperature_f lands exactly on the D14
+    # band edges after staging's 1-dp rounding: 9.94°C -> 49.9°F (cold),
+    # 10.0°C -> 50.0°F (mild).
+    outdoor_run(db, 1, day="2026-06-02", hr=140.0, cell="10.00_10.00", temp_c=9.94)
+    outdoor_run(db, 2, day="2026-06-04", hr=150.0, cell="11.00_11.00", temp_c=10.0)
+    # ── Week of Mon 2026-06-08: one qualifying run without weather
+    # (insufficient), plus one run per exclusion rule.
+    outdoor_run(db, 3, day="2026-06-09", hr=145.0, temp_c=None)
+    outdoor_run(db, 4, day="2026-06-10", hr=150.0, workout_type=1)  # race
+    outdoor_run(db, 5, day="2026-06-11", hr=None)  # no HR
+    outdoor_run(db, 6, day="2026-06-12", hr=160.0)  # above easy max
+    outdoor_run(db, 7, day="2026-06-13", hr=140.0, moving_time=1200, elapsed_time=1300)
+    # ── Week of Mon 2026-06-15: the 70°F edge — 21.11°C -> 70.0°F stays
+    # mild per D14's "50-70"; 21.17°C -> 70.1°F is warm.
+    outdoor_run(db, 8, day="2026-06-16", hr=145.0, cell="12.00_12.00", temp_c=21.11)
+    outdoor_run(db, 9, day="2026-06-17", hr=145.0, cell="13.00_13.00", temp_c=21.17)
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    # Exclusion reasons: first failing D9 rule, never a silent filter.
+    reasons = dict(
+        db.execute(
+            "SELECT activity_id, exclusion_reason FROM intermediate.int_run_efficiency ORDER BY 1"
+        ).fetchall()
+    )
+    assert reasons == {
+        1: None,
+        2: None,
+        3: None,
+        4: "tagged as race",
+        5: "no heart rate data",
+        6: "average HR above easy maximum (152 bpm)",
+        7: "moving time under 30 minutes",
+        8: None,
+        9: None,
+    }
+
+    # Efficiency traces to documented fields: 200 m/min at 140 bpm.
+    (efficiency,) = db.execute(
+        "SELECT aerobic_efficiency_m_per_heartbeat FROM intermediate.int_run_efficiency "
+        "WHERE activity_id = 1"
+    ).fetchone()
+    assert float(efficiency) == pytest.approx(200.0 / 140.0, abs=0.0001)
+
+    # Weekly mart: D12 sufficiency and NULL-not-zero efficiency.
+    weeks = db.execute(
+        """
+        SELECT week_start_date::text, qualifying_run_count, is_sufficient,
+               median_efficiency_m_per_beat
+        FROM analytics.mart_weekly_training ORDER BY week_start_date
+        """
+    ).fetchall()
+    assert [(w[0], w[1], w[2]) for w in weeks] == [
+        ("2026-06-01", 2, True),
+        ("2026-06-08", 1, False),  # excluded runs don't count toward D12
+        ("2026-06-15", 2, True),
+    ]
+    # Week 1 median interpolates between 200/150 and 200/140.
+    assert float(weeks[0][3]) == pytest.approx((200.0 / 150.0 + 200.0 / 140.0) / 2, abs=0.0001)
+
+    # Trend mart: the 28-day window ending Sun 2026-06-21 spans all five
+    # qualifying runs; the week's own band comes from its avg temperature.
+    (rolling_count, rolling_median, band) = db.execute(
+        """
+        SELECT rolling_28d_qualifying_run_count, rolling_28d_median_efficiency,
+               temperature_band_key
+        FROM analytics.mart_efficiency_trend WHERE week_start_date = '2026-06-15'
+        """
+    ).fetchone()
+    assert rolling_count == 5
+    assert float(rolling_median) == pytest.approx(200.0 / 145.0, abs=0.0001)
+    assert band == "warm"  # avg(70.0, 70.1) = 70.05 -> rounds into warm
+
+    # Band mart: every band present, boundaries exact, nothing dropped.
+    bands = {
+        row[0]: (row[1], row[2])
+        for row in db.execute(
+            """
+            SELECT band_key, qualifying_run_count, median_efficiency_m_per_beat
+            FROM analytics.mart_efficiency_by_temp_band
+            """
+        ).fetchall()
+    }
+    assert bands["cold"][0] == 1  # 49.9°F
+    assert bands["mild"][0] == 2  # 50.0°F and 70.0°F — both edges inclusive
+    assert bands["warm"][0] == 1  # 70.1°F
+    assert bands["no_weather"][0] == 1  # explicit, not silently dropped
+    assert sum(count for count, _ in bands.values()) == 5  # conservation
+
+
 @pytest.mark.integration
 def test_dbt_tests_fail_on_known_invalid_fixtures(db):
     # Physically impossible: moving time exceeds elapsed time.

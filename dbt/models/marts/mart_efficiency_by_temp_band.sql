@@ -1,0 +1,85 @@
+with qualifying_runs as (
+
+    select * from {{ ref('int_run_efficiency') }}
+    where is_qualifying
+
+),
+
+banded as (
+
+    select
+        bands.band_key,
+        bands.band_label,
+        bands.sort_order,
+        count(runs.activity_id) as qualifying_run_count,
+        percentile_cont(0.5) within group (
+            order by runs.aerobic_efficiency_m_per_heartbeat
+        )                       as median_efficiency,
+        avg(runs.aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
+        avg(runs.temperature_f) as avg_temperature_f,
+        avg(runs.pace_min_per_mi) as avg_pace_min_per_mi,
+        avg(runs.average_hr_bpm) as avg_hr_bpm
+    from {{ ref('temperature_bands') }} bands
+    -- LEFT JOIN from the seed: every D14 band appears even with zero
+    -- runs (count 0, NULL statistics — an empty band is data, not a
+    -- missing row).
+    left join qualifying_runs runs
+        on runs.weather_available
+        and (bands.min_temperature_f is null
+            or runs.temperature_f >= bands.min_temperature_f)
+        and (bands.max_temperature_f is null
+            or runs.temperature_f <= bands.max_temperature_f)
+    group by bands.band_key, bands.band_label, bands.sort_order
+
+),
+
+-- Qualifying runs with no matched weather can't be banded; hiding them
+-- would make the band comparison look more complete than it is. They
+-- get an explicit pseudo-band row instead (data-quality principle 1:
+-- missing data is explained, never silently dropped).
+unbanded as (
+
+    select
+        'no_weather' as band_key,
+        'weather unavailable' as band_label,
+        99 as sort_order,
+        count(*) as qualifying_run_count,
+        percentile_cont(0.5) within group (
+            order by aerobic_efficiency_m_per_heartbeat
+        ) as median_efficiency,
+        avg(aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
+        null::numeric as avg_temperature_f,
+        avg(pace_min_per_mi) as avg_pace_min_per_mi,
+        avg(average_hr_bpm) as avg_hr_bpm
+    from qualifying_runs
+    where not weather_available
+
+)
+
+select
+    'all_time' as period,
+    band_key,
+    band_label,
+    sort_order,
+    qualifying_run_count,
+    round(median_efficiency::numeric, 4)  as median_efficiency_m_per_beat,
+    round(mean_efficiency::numeric, 4)    as mean_efficiency_m_per_beat,
+    round(avg_temperature_f::numeric, 1)  as avg_temperature_f,
+    round(avg_pace_min_per_mi::numeric, 2) as avg_pace_min_per_mi,
+    round(avg_hr_bpm::numeric, 0)         as avg_hr_bpm
+from banded
+
+union all
+
+select
+    'all_time',
+    band_key,
+    band_label,
+    sort_order,
+    qualifying_run_count,
+    round(median_efficiency::numeric, 4),
+    round(mean_efficiency::numeric, 4),
+    avg_temperature_f,
+    round(avg_pace_min_per_mi::numeric, 2),
+    round(avg_hr_bpm::numeric, 0)
+from unbanded

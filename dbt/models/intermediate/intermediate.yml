@@ -34,3 +34,50 @@ models:
       - name: weather_matched
         description: True only when a qualifying observation lies within 60 minutes.
         tests: [not_null]
+
+  - name: int_run_efficiency
+    description: >
+      One row per running activity (same grain as fct_runs), adding the
+      D10 aerobic-efficiency metric and the run's eligibility verdict.
+      Ineligible runs are NEVER silently filtered: each carries a
+      human-readable exclusion_reason (the FIRST failing D9 rule in
+      priority order: data availability, HR sanity, easy-HR ceiling,
+      duration, race/workout intent, pace bounds). Efficiency is an
+      observational signal, not proof of physiological improvement —
+      approved framing lives in the README's metric definitions.
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per running activity).
+        tests: [unique, not_null]
+      - name: aerobic_efficiency_m_per_heartbeat
+        description: >
+          speed_m_per_min / average_hr_bpm (D10) — approximate meters
+          traveled per heartbeat; higher = faster at the same HR or
+          lower HR at the same speed. Computed for any run with HR and
+          speed (races included); is_qualifying decides what the marts
+          aggregate. NULL when HR is absent — missing, never zero.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0.1, max_value: 10}
+      - name: is_qualifying
+        description: >
+          fct_runs.easy_run_eligible carried through: the run counts
+          toward efficiency trends (D9 easy-run rules, thresholds as
+          dbt vars).
+        tests: [not_null]
+      - name: exclusion_reason
+        description: >
+          NULL when qualifying; otherwise the first failing D9 rule.
+          Threshold values are rendered from the same dbt vars the flag
+          logic uses, so reasons can never disagree with behavior.
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - 'no heart rate data'
+                  - 'average HR outside 90–200 bpm sanity band'
+                  - 'average HR above easy maximum (152 bpm)'
+                  - 'moving time under 30 minutes'
+                  - 'tagged as race'
+                  - 'tagged as workout'
+                  - 'pace outside 4.0–20.0 min/mi bounds'
