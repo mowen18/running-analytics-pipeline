@@ -1,7 +1,7 @@
-with qualifying_runs as (
+with valid_runs as (
 
     select * from {{ ref('int_run_efficiency') }}
-    where is_qualifying
+    where is_valid
 
 ),
 
@@ -11,7 +11,7 @@ banded as (
         bands.band_key,
         bands.band_label,
         bands.sort_order,
-        count(runs.activity_id) as qualifying_run_count,
+        count(runs.activity_id) as valid_run_count,
         percentile_cont(0.5) within group (
             order by runs.aerobic_efficiency_m_per_heartbeat
         )                       as median_efficiency,
@@ -23,7 +23,7 @@ banded as (
     -- LEFT JOIN from the seed: every D14 band appears even with zero
     -- runs (count 0, NULL statistics — an empty band is data, not a
     -- missing row).
-    left join qualifying_runs runs
+    left join valid_runs runs
         on runs.weather_available
         and (bands.min_temperature_f is null
             or runs.temperature_f >= bands.min_temperature_f)
@@ -33,7 +33,7 @@ banded as (
 
 ),
 
--- Qualifying runs outside the temperature bands get explicit
+-- Valid runs outside the temperature bands get explicit
 -- pseudo-band rows rather than vanishing (data-quality principle 1) —
 -- and "not applicable" is kept distinct from "missing":
 --   indoor      = treadmill runs; no outdoor weather APPLIES
@@ -46,7 +46,7 @@ indoor as (
         'indoor' as band_key,
         'indoor' as band_label,
         98 as sort_order,
-        count(*) as qualifying_run_count,
+        count(*) as valid_run_count,
         percentile_cont(0.5) within group (
             order by aerobic_efficiency_m_per_heartbeat
         ) as median_efficiency,
@@ -54,7 +54,7 @@ indoor as (
         null::numeric as avg_temperature_f,
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
-    from qualifying_runs
+    from valid_runs
     where is_trainer
 
 ),
@@ -65,7 +65,7 @@ unbanded as (
         'no_weather' as band_key,
         'weather unavailable' as band_label,
         99 as sort_order,
-        count(*) as qualifying_run_count,
+        count(*) as valid_run_count,
         percentile_cont(0.5) within group (
             order by aerobic_efficiency_m_per_heartbeat
         ) as median_efficiency,
@@ -73,7 +73,7 @@ unbanded as (
         null::numeric as avg_temperature_f,
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
-    from qualifying_runs
+    from valid_runs
     where not is_trainer and not weather_available
 
 )
@@ -83,7 +83,7 @@ select
     band_key,
     band_label,
     sort_order,
-    qualifying_run_count,
+    valid_run_count,
     round(median_efficiency::numeric, 4)  as median_efficiency_m_per_beat,
     round(mean_efficiency::numeric, 4)    as mean_efficiency_m_per_beat,
     round(avg_temperature_f::numeric, 1)  as avg_temperature_f,
@@ -98,7 +98,7 @@ select
     band_key,
     band_label,
     sort_order,
-    qualifying_run_count,
+    valid_run_count,
     round(median_efficiency::numeric, 4),
     round(mean_efficiency::numeric, 4),
     avg_temperature_f,
@@ -113,7 +113,7 @@ select
     band_key,
     band_label,
     sort_order,
-    qualifying_run_count,
+    valid_run_count,
     round(median_efficiency::numeric, 4),
     round(mean_efficiency::numeric, 4),
     avg_temperature_f,

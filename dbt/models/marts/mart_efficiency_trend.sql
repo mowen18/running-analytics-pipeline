@@ -4,13 +4,13 @@ with weekly as (
 
 ),
 
-qualifying_runs as (
+valid_runs as (
 
     select
         start_date_local::date as run_date,
         aerobic_efficiency_m_per_heartbeat
     from {{ ref('int_run_efficiency') }}
-    where is_qualifying
+    where is_valid
 
 ),
 
@@ -24,35 +24,36 @@ rolling as (
     select
         weekly.week_start_date,
         percentile_cont(0.5) within group (
-            order by qualifying_runs.aerobic_efficiency_m_per_heartbeat
+            order by valid_runs.aerobic_efficiency_m_per_heartbeat
         )        as rolling_median_efficiency,
-        count(*) as rolling_qualifying_run_count
+        count(*) as rolling_valid_run_count
     from weekly
-    inner join qualifying_runs
-        on qualifying_runs.run_date
+    inner join valid_runs
+        on valid_runs.run_date
             > weekly.week_start_date + 6 - {{ var('trend_window_days') }}
-        and qualifying_runs.run_date <= weekly.week_start_date + 6
+        and valid_runs.run_date <= weekly.week_start_date + 6
     group by weekly.week_start_date
 
 )
 
 select
     weekly.week_start_date,
-    weekly.qualifying_run_count,
+    weekly.valid_run_count,
     weekly.median_efficiency_m_per_beat,
     round(rolling.rolling_median_efficiency::numeric, 4)
         as rolling_{{ var('trend_window_days') }}d_median_efficiency,
-    coalesce(rolling.rolling_qualifying_run_count, 0)
-        as rolling_{{ var('trend_window_days') }}d_qualifying_run_count,
+    coalesce(rolling.rolling_valid_run_count, 0)
+        as rolling_{{ var('trend_window_days') }}d_valid_run_count,
+    weekly.avg_hr_bpm,
     weekly.avg_temperature_f,
     bands.band_key   as temperature_band_key,
     bands.band_label as temperature_band_label,
     weekly.is_sufficient
 from weekly
 left join rolling using (week_start_date)
--- The week's band comes from its average qualifying-run temperature;
--- NULL when the week has no weather-matched qualifying runs (missing,
--- never a default band).
+-- The week's band comes from its average valid-run temperature; NULL
+-- when the week has no weather-matched valid runs (missing, never a
+-- default band).
 left join {{ ref('temperature_bands') }} bands
     on (bands.min_temperature_f is null
         or weekly.avg_temperature_f >= bands.min_temperature_f)

@@ -66,17 +66,6 @@ select
     wind_speed_mph,
     weather_match_minutes,
     weather_matched as weather_available,
-    -- Easy-run eligibility per D9, thresholds via vars (never inline).
-    (
-        has_heartrate
-        and average_hr_bpm is not null
-        and average_hr_bpm <= {{ var('easy_hr_max') }}
-        and average_hr_bpm between {{ var('hr_sanity_floor') }} and {{ var('hr_sanity_ceiling') }}
-        and moving_time_min >= {{ var('easy_min_moving_minutes') }}
-        and coalesce(workout_type, 0) not in (1, 3)  -- 1 = race, 3 = workout
-        and pace_min_per_mi between {{ var('easy_pace_min_per_mi_floor') }}
-            and {{ var('easy_pace_min_per_mi_ceiling') }}
-    )                       as easy_run_eligible,
     moving_time_min >= {{ var('long_run_min_moving_minutes') }} as long_run_eligible,
     fetched_at
 from derived

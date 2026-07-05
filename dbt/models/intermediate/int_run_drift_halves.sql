@@ -4,8 +4,8 @@
   drift_cooldown_minutes -> require >= drift_min_window_minutes
   remaining -> split into two equal-duration halves by elapsed time.
 
-  Candidates are easy-qualifying runs (D9) that are long enough for
-  drift (the same 45-minute var as long_run_eligible). Every candidate
+  Candidates are HR-carrying runs long enough for drift (D15 revised
+  v1.1: the same 45-minute var as long_run_eligible). Every candidate
   appears in the output; runs that can't be analyzed carry the FIRST
   failing check as a deterministic exclusion reason (acceptance
   criterion 4), in dependency order: stream availability -> required
@@ -16,7 +16,7 @@ with candidates as (
 
     select activity_id, moving_time_min, week_start_date, start_date_local
     from {{ ref('int_run_efficiency') }}
-    where is_qualifying and long_run_eligible
+    where long_run_eligible and average_hr_bpm is not null
 
 ),
 

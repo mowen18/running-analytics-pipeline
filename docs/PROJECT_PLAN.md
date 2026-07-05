@@ -624,3 +624,28 @@ The completed project supports resume claims such as:
 # 13. Final Architectural Statement
 
 The Running Analytics Pipeline owns its PostgreSQL Docker service. The Habit Focus Observatory configuration may be copied as a template, but its container, database, credentials, and volume are never dependencies of this project. Cross-domain analysis, if implemented, uses a deliberately designed integration environment only after both projects are independently complete.
+
+## Revision v1.1 — 2026-07-05 — Remove intensity gating from efficiency aggregation
+
+**Rationale:** D9's easy-HR ceiling excluded nearly all real runs, leaving the
+trend charts structurally empty. Run-difficulty categorization was defining
+far more behavior than it earned. The efficiency metric (D10) already
+normalizes by HR; intensity mix is accepted as a displayed-not-filtered
+noise source. Difficulty categorization is no longer a project priority.
+
+**Revised decisions:**
+- **D9 (revised):** "Easy-run eligibility" is replaced by **run-validity
+  rules**. A run feeds all efficiency aggregates when: HR data present;
+  avg HR within 90–200 bpm; pace within 4:00–20:00 min/mi; moving time
+  ≥ 15 min. There is NO intensity ceiling and NO race/workout exclusion.
+  `EASY_HR_MAX` / `easy_hr_max` is retired.
+- **D12/D13 (unchanged mechanics):** sufficiency (≥2/week) and the 28-day
+  rolling median now count valid runs, not "easy" runs.
+- **D15 (revised):** drift candidacy = moving time ≥ 45 min + HR present.
+  Easy classification is no longer a drift prerequisite.
+- **Language standard (revised):** approved framing is "pace-at-heart-rate
+  efficiency across runs with valid heart-rate data"; docs note that
+  intensity mix is not controlled for.
+- Exclusion reasons remain first-class (never silent), but the ladder now
+  contains only data-validity rungs: no HR → HR out of sanity range →
+  pace out of bounds → under minimum duration.

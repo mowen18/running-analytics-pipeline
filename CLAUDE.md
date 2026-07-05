@@ -6,23 +6,11 @@
   one, stop and ask — do not silently deviate.
 
 ## Current status
-- All phases (0–6) are complete: the full project plan is implemented.
-  Remaining follow-ups wait on real data: dashboard screenshots + dbt
-  lineage image (images/README.md), and the manual drift-plausibility
-  inspection (Phase 5 acceptance criterion 6)
-- The Streamlit app (app/streamlit_app.py, `make app`) reads ONLY the
-  analytics schema — enforced by an allow-list and tests/test_app.py.
-  Keep business logic in dbt, never in the app
-- Efficiency and drift marts are structurally empty of trend data until
-  HR-carrying runs exist — see the no-HR note below; sync-streams
-  likewise reports eligible=0 (D15 requires HR)
-- All activities ingested so far are indoor (trainer=true, no coordinates),
-  so `sync-weather` correctly reports eligible_runs=0 until the first
-  outdoor GPS run — that is expected, not a bug
-- History was re-imported into Strava on 2026-07-05 WITH heart rate
-  (109 activities, Apr–Jul 2026, all has_heartrate=true; the old
-  44-activity no-HR history was deleted from Strava and the raw_strava
-  tables rebuilt via reconcile). Efficiency and drift marts are live
+- Revision v1.1 is implemented: efficiency aggregates cover every run
+  with valid HR data (`is_valid` — HR present, 90–200 bpm, pace
+  4:00–20:00, ≥15 min). easy_run_eligible / easy_hr_max and the
+  "qualifying easy runs" vocabulary are gone; marts expose
+  valid_run_count etc. Drift candidacy is ≥45 min moving + HR present
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433

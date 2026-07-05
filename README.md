@@ -9,10 +9,11 @@ tests, and docs — the dashboard is a thin cap.
 
 * Is pace at a comparable heart rate improving over time?
 * How does running efficiency vary under different weather conditions?
-* Is cardiac drift decreasing during longer easy runs?
+* Is cardiac drift decreasing during longer runs?
 * How is weekly volume changing alongside these efficiency measures?
 
-**Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are locked).
+**Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are
+locked; Revision v1.1 supersedes D9 and amends D15).
 **Status:** all six phases complete (Release 1.1 + presentation layer).
 
 ## Architecture
@@ -212,8 +213,8 @@ matches the *nearest* observation that actually carries measurements
 (explicit "archive had no data" rows never match) and only counts as
 matched within 60 minutes of the run's start; training weeks are local
 wall-clock (`week_start_date` = Monday of the local week); metric
-thresholds (D9 easy-run rules, the 45-minute long-run definition) are
-dbt vars, never inline SQL. Every measurement column carries an explicit
+thresholds (the D9 run-validity rules as revised by v1.1, the 45-minute
+long-run definition) are dbt vars, never inline SQL. Every measurement column carries an explicit
 unit suffix, and missing HR/weather stays NULL through every layer.
 
 **Missing weather is explicit, never zero.** Hours the archive has no data
@@ -235,42 +236,38 @@ aerobic_efficiency_m_per_heartbeat = speed_m_per_minute / average_hr_bpm
 Approximate meters traveled per heartbeat. Higher = faster at the same
 heart rate, or a lower heart rate at the same speed. **This is an
 observational signal, not proof of physiological improvement.** The
-approved framing is *"pace-at-heart-rate efficiency has increased during
-qualifying easy runs under similar temperature conditions"* — never *"the
-metric proves aerobic fitness improved."* Weather, terrain, sleep, and
-measurement noise all move it.
+approved framing is *"pace-at-heart-rate efficiency has increased across
+runs with valid heart-rate data"* — never *"the metric proves aerobic
+fitness improved."* Weather, terrain, sleep, and measurement noise all
+move it, and **intensity mix is not controlled for**: the metric already
+normalizes by HR, so hard efforts and races feed the same aggregates,
+with average HR displayed alongside for context.
 
-**Easy-run eligibility (D9)** — a run qualifies for efficiency trends when
-all of the following hold (each threshold is a dbt var, editable in
-`dbt/dbt_project.yml` without touching model SQL):
+**Run validity (D9, revised by v1.1)** — a run feeds every efficiency
+aggregate when all of the following hold (each threshold is a dbt var,
+editable in `dbt/dbt_project.yml` without touching model SQL). There is
+no intensity ceiling and no race/workout exclusion:
 
 | Rule | Default |
 |---|---|
 | Heart-rate data present | required |
 | Average HR within instrument-sanity band | 90–200 bpm |
-| Average HR at or below the easy ceiling | ≤ 152 bpm |
-| Moving time | ≥ 30 min |
-| Not tagged race or workout in Strava | required |
 | Pace within sanity bounds | 4:00–20:00 min/mi |
+| Moving time | ≥ 15 min |
 
-Ineligible runs are never silently dropped: `int_run_efficiency` gives
+Invalid runs are never silently dropped: `int_run_efficiency` gives
 every excluded run a human-readable `exclusion_reason` (the first failing
 rule in a documented priority order).
 
 **Weekly statistics (D11, D12)** — the weekly summary statistic is the
-**median** efficiency across qualifying runs (mean shown as secondary);
-a week is trend-worthy only with ≥ 2 qualifying runs (`is_sufficient`).
+**median** efficiency across valid runs (mean shown as secondary);
+a week is trend-worthy only with ≥ 2 valid runs (`is_sufficient`).
 **Trend (D13)** — a 28-day rolling median over run-level efficiency
 smooths single-week noise. **Temperature bands (D14)** — < 50 °F,
 50–70 °F, > 70 °F, defined once in the `temperature_bands` seed and
-joined by range; qualifying runs without matched weather appear in an
+joined by range; valid runs without matched weather appear in an
 explicit *weather unavailable* row rather than vanishing from the
 comparison.
-
-**Current-data caveat:** no activity in the present history carries
-heart-rate data (the Apple Health → Strava path drops HR), so no run
-qualifies yet and the efficiency marts are structurally empty — correct
-behavior that resolves as soon as HR-carrying runs are recorded.
 
 ## Stream ingestion and cardiac drift
 
@@ -298,7 +295,7 @@ decoupling_pct = (first_half_efficiency − second_half_efficiency)
 
 **Sign convention (D17): positive = efficiency declined in the second
 half; near zero = stable; negative = the second half improved.** A
-rising decoupling trend over comparable easy runs is the observational
+rising decoupling trend over comparable long runs is the observational
 signal of interest — never proof of a fitness change on its own.
 
 Coverage and pause thresholds (the two checks D16 leaves unquantified)
@@ -338,10 +335,10 @@ exactly what data would populate it.
 
 ## Known limitations
 
-* **Long easy runs are currently treadmill runs**, so drift rows and
-  most qualifying easy runs carry no weather — correct behavior (indoor
+* **Long runs are currently treadmill runs**, so drift rows and
+  most valid runs carry no weather — correct behavior (indoor
   runs have no meaningful outdoor weather), but it keeps the
-  temperature-band comparison sparse until qualifying outdoor runs
+  temperature-band comparison sparse until valid outdoor runs
   accumulate.
 * Activities uploaded or edited **more than 14 days after they
   occurred** are only caught by `make reconcile`, not incremental sync.

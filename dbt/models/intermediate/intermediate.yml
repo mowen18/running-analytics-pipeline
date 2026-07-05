@@ -38,13 +38,14 @@ models:
   - name: int_run_efficiency
     description: >
       One row per running activity (same grain as fct_runs), adding the
-      D10 aerobic-efficiency metric and the run's eligibility verdict.
-      Ineligible runs are NEVER silently filtered: each carries a
-      human-readable exclusion_reason (the FIRST failing D9 rule in
-      priority order: data availability, HR sanity, easy-HR ceiling,
-      duration, race/workout intent, pace bounds). Efficiency is an
-      observational signal, not proof of physiological improvement —
-      approved framing lives in the README's metric definitions.
+      D10 aerobic-efficiency metric and the run's validity verdict (D9
+      revised v1.1: data-validity rules only — no intensity ceiling, no
+      race/workout exclusion). Invalid runs are NEVER silently filtered:
+      each carries a human-readable exclusion_reason (the FIRST failing
+      rule in priority order: data availability, HR sanity, pace bounds,
+      minimum duration). Efficiency is an observational signal, not
+      proof of physiological improvement — approved framing lives in
+      the README's metric definitions.
     columns:
       - name: activity_id
         description: Strava activity id (one row per running activity).
@@ -54,20 +55,21 @@ models:
           speed_m_per_min / average_hr_bpm (D10) — approximate meters
           traveled per heartbeat; higher = faster at the same HR or
           lower HR at the same speed. Computed for any run with HR and
-          speed (races included); is_qualifying decides what the marts
+          speed (races included); is_valid decides what the marts
           aggregate. NULL when HR is absent — missing, never zero.
         tests:
           - accepted_range:
               arguments: {min_value: 0.1, max_value: 10}
-      - name: is_qualifying
+      - name: is_valid
         description: >
-          fct_runs.easy_run_eligible carried through: the run counts
-          toward efficiency trends (D9 easy-run rules, thresholds as
-          dbt vars).
+          The run carries valid HR data and counts toward every
+          efficiency aggregate (D9 revised v1.1: HR present, HR within
+          the sanity band, pace within bounds, moving time at least the
+          minimum — thresholds as dbt vars).
         tests: [not_null]
       - name: exclusion_reason
         description: >
-          NULL when qualifying; otherwise the first failing D9 rule.
+          NULL when valid; otherwise the first failing validity rule.
           Threshold values are rendered from the same dbt vars the flag
           logic uses, so reasons can never disagree with behavior.
         tests:
@@ -76,11 +78,8 @@ models:
                 values:
                   - 'no heart rate data'
                   - 'average HR outside 90–200 bpm sanity band'
-                  - 'average HR above easy maximum (152 bpm)'
-                  - 'moving time under 30 minutes'
-                  - 'tagged as race'
-                  - 'tagged as workout'
                   - 'pace outside 4.0–20.0 min/mi bounds'
+                  - 'moving time under 15 minutes'
 
   - name: int_run_stream_samples
     description: >
@@ -120,8 +119,9 @@ models:
 
   - name: int_run_drift_halves
     description: >
-      One row per drift CANDIDATE (easy-qualifying run >= the 45-minute
-      long-run threshold): the D16 analysis window applied in the
+      One row per drift CANDIDATE (HR-carrying run >= the 45-minute
+      long-run threshold, D15 revised v1.1 — intensity is not a
+      prerequisite): the D16 analysis window applied in the
       plan's order (drop non-moving samples, trim the first 10 and last
       5 minutes, require >= 30 minutes remaining, split into two
       equal-duration halves), per-half HR/speed/efficiency, and the

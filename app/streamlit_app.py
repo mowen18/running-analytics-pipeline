@@ -130,17 +130,20 @@ def hr_availability_note(runs: pd.DataFrame) -> str:
 
 EFFICIENCY_TREND_COLUMNS = {
     "week_start_date": st.column_config.DateColumn("Week", format="MMM D"),
-    "qualifying_run_count": st.column_config.NumberColumn("Qualifying (n)"),
+    "valid_run_count": st.column_config.NumberColumn("Valid (n)"),
     "median_efficiency_m_per_beat": st.column_config.NumberColumn(
         "Weekly median (m/beat)", format="%.4f"
     ),
     "rolling_28d_median_efficiency": st.column_config.NumberColumn(
         "28-day median (m/beat)", format="%.4f"
     ),
-    "rolling_28d_qualifying_run_count": st.column_config.NumberColumn("28-day (n)"),
+    "rolling_28d_valid_run_count": st.column_config.NumberColumn("28-day (n)"),
+    # Intensity context: aggregates no longer filter on effort (v1.1),
+    # so the mix behind each weekly point stays visible.
+    "avg_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
     "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
     "temperature_band_key": None,  # the label column already carries it
-    # Week-level context: the band of the WEEK'S average qualifying-run
+    # Week-level context: the band of the WEEK'S average valid-run
     # temperature — per-run bands live in the eligibility table below.
     "temperature_band_label": st.column_config.TextColumn("Week temp band"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
@@ -160,7 +163,7 @@ RUN_QUALITY_COLUMNS = {
     "aerobic_efficiency_m_per_heartbeat": st.column_config.NumberColumn(
         "Eff (m/beat)", format="%.4f"
     ),
-    "is_qualifying": st.column_config.CheckboxColumn("Qualifying"),
+    "is_valid": st.column_config.CheckboxColumn("Valid"),
     "exclusion_reason": st.column_config.TextColumn("Why excluded"),
     "long_run_eligible": None,
     "weather_available": None,  # the band column carries the outcome
@@ -175,8 +178,9 @@ def efficiency_view():
     st.header("Aerobic efficiency")
     st.caption(
         "aerobic_efficiency_m_per_heartbeat = speed (m/min) ÷ average HR (bpm) — "
-        "approximate meters per heartbeat across qualifying easy runs (D9 rules, "
-        "median weekly, 28-day rolling median). " + OBSERVATIONAL_NOTE
+        "approximate meters per heartbeat across runs with valid heart-rate data "
+        "(D9 validity rules, median weekly, 28-day rolling median). Intensity mix "
+        "is not controlled for — avg HR is shown for context. " + OBSERVATIONAL_NOTE
     )
 
     trend = load("mart_efficiency_trend")
@@ -187,7 +191,7 @@ def efficiency_view():
     if sufficient["median_efficiency_m_per_beat"].dropna().empty:
         st.info(
             "No trend to display yet: no week has the required "
-            "2 qualifying easy runs. " + hr_availability_note(load("fct_runs"))
+            "2 runs with valid HR data. " + hr_availability_note(load("fct_runs"))
         )
     else:
         axis = week_axis(sufficient["week_start_date"])
@@ -205,7 +209,8 @@ def efficiency_view():
                     alt.Tooltip(
                         "median_efficiency_m_per_beat:Q", title="weekly median", format=".4f"
                     ),
-                    alt.Tooltip("qualifying_run_count:Q", title="qualifying runs (n)"),
+                    alt.Tooltip("valid_run_count:Q", title="valid runs (n)"),
+                    alt.Tooltip("avg_hr_bpm:Q", title="avg HR (bpm)", format=".0f"),
                 ],
             )
             .properties(height=320)
@@ -221,24 +226,24 @@ def efficiency_view():
                     alt.Tooltip(
                         "rolling_28d_median_efficiency:Q", title="28-day median", format=".4f"
                     ),
-                    alt.Tooltip("rolling_28d_qualifying_run_count:Q", title="runs in window (n)"),
+                    alt.Tooltip("rolling_28d_valid_run_count:Q", title="runs in window (n)"),
                 ],
             )
         )
         st.altair_chart(themed(alt.layer(weekly, rolling)), use_container_width=True)
         st.caption(
             "Blue line: 28-day rolling median (the primary trend). Gray points: "
-            "single-week medians. Weeks below the 2-qualifying-run sufficiency "
+            "single-week medians. Weeks below the 2-valid-run sufficiency "
             "threshold are excluded from this chart and flagged in the table."
         )
 
     st.subheader("Efficiency by temperature band")
     bands = load("mart_efficiency_by_temp_band")
-    if bands["qualifying_run_count"].sum() == 0:
-        st.info("All temperature bands are empty until qualifying runs exist.")
+    if bands["valid_run_count"].sum() == 0:
+        st.info("All temperature bands are empty until runs with valid HR data exist.")
     else:
         bands = bands.copy()
-        bands["n_label"] = "n=" + bands["qualifying_run_count"].astype(int).astype(str)
+        bands["n_label"] = "n=" + bands["valid_run_count"].astype(int).astype(str)
         bands["label_x"] = bands["median_efficiency_m_per_beat"].fillna(0)
         # EncodingSortField (with op), not SortField: a bare SortField is
         # invalid for ordering an axis by another column in a layered
@@ -264,7 +269,8 @@ def efficiency_view():
                     alt.Tooltip("band_label:N", title="band"),
                     alt.Tooltip("median_efficiency_m_per_beat:Q", title="median", format=".4f"),
                     alt.Tooltip("mean_efficiency_m_per_beat:Q", title="mean", format=".4f"),
-                    alt.Tooltip("qualifying_run_count:Q", title="runs (n)"),
+                    alt.Tooltip("valid_run_count:Q", title="runs (n)"),
+                    alt.Tooltip("avg_hr_bpm:Q", title="avg HR (bpm)", format=".0f"),
                 ],
             )
         )
@@ -277,8 +283,8 @@ def efficiency_view():
             themed(alt.layer(bars, labels).properties(height=190)), use_container_width=True
         )
         st.caption(
-            "Median of per-run efficiency across qualifying easy runs in each "
-            "band — runs are banded individually by their own matched "
+            "Median of per-run efficiency across runs with valid HR data in "
+            "each band — runs are banded individually by their own matched "
             "temperature, never averaged by week."
         )
 
@@ -289,9 +295,10 @@ def efficiency_view():
     )
     st.caption(
         "Efficiency is computed for every heart-rate-carrying run; the trend "
-        "and band charts aggregate QUALIFYING easy runs only (D9), because "
-        "meters-per-heartbeat is only comparable at comparable effort. The "
-        "easy ceiling is the `easy_hr_max` dbt var (152 bpm)."
+        "and band charts aggregate every run with VALID heart-rate data (D9 "
+        "validity rules: HR present, 90–200 bpm, pace 4:00–20:00 min/mi, "
+        "≥ 15 min moving). Intensity is displayed, never filtered — the Avg HR "
+        "column shows the effort mix behind each aggregate."
     )
 
     st.dataframe(
@@ -305,7 +312,7 @@ def efficiency_view():
 WEEKLY_COLUMNS = {
     "week_start_date": st.column_config.DateColumn("Week", format="MMM D"),
     "run_count": st.column_config.NumberColumn("Runs"),
-    "qualifying_run_count": st.column_config.NumberColumn("Qualifying (n)"),
+    "valid_run_count": st.column_config.NumberColumn("Valid (n)"),
     "long_run_count": st.column_config.NumberColumn("Long runs"),
     "total_distance_mi": st.column_config.NumberColumn("Miles", format="%.1f"),
     "total_moving_time_min": st.column_config.NumberColumn("Moving (min)", format="%.0f"),
@@ -314,9 +321,10 @@ WEEKLY_COLUMNS = {
         "Median eff (m/beat)", format="%.4f"
     ),
     "mean_efficiency_m_per_beat": st.column_config.NumberColumn("Mean eff (m/beat)", format="%.4f"),
+    "avg_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
     "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
     "avg_relative_humidity_pct": st.column_config.NumberColumn("Avg RH %", format="%.0f"),
-    "qualifying_runs_with_weather": st.column_config.NumberColumn("Qual. w/ weather (n)"),
+    "valid_runs_with_weather": st.column_config.NumberColumn("Valid w/ weather (n)"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
 }
 
@@ -334,7 +342,7 @@ def weekly_view():
     col1.metric("Total miles", f"{total_mi:,.1f}")
     col2.metric("Runs", int(weekly["run_count"].sum()))
     col3.metric("Long runs (≥45 min)", int(weekly["long_run_count"].sum()))
-    col4.metric("Qualifying easy runs", int(weekly["qualifying_run_count"].sum()))
+    col4.metric("Runs with valid HR", int(weekly["valid_run_count"].sum()))
 
     mileage = (
         alt.Chart(weekly)
@@ -360,8 +368,8 @@ def weekly_view():
 
     st.dataframe(weekly, use_container_width=True, hide_index=True, column_config=WEEKLY_COLUMNS)
     st.caption(
-        "Volume counts every run; efficiency columns aggregate qualifying easy "
-        "runs only and stay empty (never zero) for weeks without them."
+        "Volume counts every run; efficiency columns aggregate runs with valid "
+        "HR data only and stay empty (never zero) for weeks without them."
     )
 
 
@@ -385,8 +393,9 @@ DRIFT_TREND_COLUMNS = {
 def drift_view():
     st.header("Cardiac drift")
     st.caption(
-        "Decoupling % compares efficiency between equal halves of long easy runs "
-        "(first 10 min and last 5 min trimmed). Sign convention (D17): positive = "
+        "Decoupling % compares efficiency between equal halves of long runs — "
+        "≥ 45 min moving with HR (D15), first 10 min and last 5 min trimmed. "
+        "Sign convention (D17): positive = "
         "efficiency declined in the second half; near zero = stable; negative = "
         "second half improved. " + OBSERVATIONAL_NOTE
     )

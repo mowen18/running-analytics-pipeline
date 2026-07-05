@@ -5,12 +5,10 @@ models:
     description: >
       One row per Strava running activity (Run/TrailRun/VirtualRun),
       indoor and outdoor alike, with derived training measures, weather
-      context, and eligibility flags. Missing heart rate and missing
-      weather remain NULL end to end — distinguishable from zero. NOTE
-      for current data: the entire history to date is indoor without
-      heart rate, so weather_available and easy_run_eligible are false
-      everywhere until outdoor / HR-recorded runs exist; that is the
-      data, not a modeling defect.
+      context, and the duration-based long-run flag. Missing heart rate
+      and missing weather remain NULL end to end — distinguishable from
+      zero. Run validity for the efficiency aggregates (D9 revised
+      v1.1) is derived downstream in int_run_efficiency, not here.
     columns:
       - name: activity_id
         description: Strava activity id (grain of the table).
@@ -54,13 +52,6 @@ models:
         description: Minutes between run start and the matched observation.
       - name: temperature_c
         description: Matched observation air temperature, °C; NULL when unmatched.
-      - name: easy_run_eligible
-        description: >
-          Easy-run eligibility per D9, all thresholds dbt vars: HR
-          present and <= easy_hr_max (152), HR within 90-200 sanity
-          band, moving time >= 30 min, not tagged race/workout, pace
-          within 4:00-20:00 min/mi.
-        tests: [not_null]
       - name: long_run_eligible
         description: >
           Moving time >= long_run_min_moving_minutes (45, aligned with

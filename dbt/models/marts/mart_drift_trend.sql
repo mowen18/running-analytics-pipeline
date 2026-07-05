@@ -52,6 +52,6 @@ select
     -- Acceptance criterion 7: the dashboard HIDES trend points where
     -- this is false — the rows stay present here so nothing is
     -- silently dropped from the warehouse.
-    weekly.drift_run_count >= {{ var('min_weekly_qualifying_runs') }} as is_sufficient
+    weekly.drift_run_count >= {{ var('min_weekly_valid_runs') }} as is_sufficient
 from weekly
 left join rolling using (week_start_date)

@@ -5,10 +5,11 @@ models:
     description: >
       One row per training week (Monday-start, local wall-clock, from
       fct_runs.week_start_date). Volume covers ALL runs; efficiency
-      statistics cover QUALIFYING easy runs only, with median primary
-      and mean secondary (D11). Weeks with zero qualifying runs keep
+      statistics cover runs with VALID heart-rate data (D9 revised
+      v1.1 — intensity mix is displayed, not filtered), with median
+      primary and mean secondary (D11). Weeks with zero valid runs keep
       NULL efficiency — never zero. is_sufficient (D12) marks weeks with
-      enough qualifying runs to be trend-worthy; the dashboard must show
+      enough valid runs to be trend-worthy; the dashboard must show
       sample counts alongside every efficiency figure.
     columns:
       - name: week_start_date
@@ -17,8 +18,8 @@ models:
       - name: run_count
         description: All running activities that week.
         tests: [not_null]
-      - name: qualifying_run_count
-        description: Runs passing D9 easy-run eligibility.
+      - name: valid_run_count
+        description: Runs passing the D9 (revised v1.1) validity rules.
         tests: [not_null]
       - name: long_run_count
         description: Runs with moving time >= the 45-minute long-run threshold.
@@ -31,17 +32,21 @@ models:
       - name: median_efficiency_m_per_beat
         description: >
           PRIMARY weekly statistic (D11): median D10 efficiency across
-          qualifying runs; NULL when none qualify.
+          valid runs; NULL when none are valid.
       - name: mean_efficiency_m_per_beat
         description: Secondary statistic; same population as the median.
+      - name: avg_hr_bpm
+        description: >
+          Average HR across the week's valid runs — intensity context,
+          since the aggregates no longer filter on effort (v1.1).
       - name: avg_temperature_f
-        description: Average matched temperature across qualifying runs (°F); NULL when unmatched.
+        description: Average matched temperature across valid runs (°F); NULL when unmatched.
       - name: avg_relative_humidity_pct
-        description: Average matched humidity across qualifying runs; NULL when unmatched.
-      - name: qualifying_runs_with_weather
-        description: How many qualifying runs had weather within 60 min — the sample behind the averages.
+        description: Average matched humidity across valid runs; NULL when unmatched.
+      - name: valid_runs_with_weather
+        description: How many valid runs had weather within 60 min — the sample behind the averages.
       - name: is_sufficient
-        description: qualifying_run_count >= min_weekly_qualifying_runs (D12, default 2).
+        description: valid_run_count >= min_weekly_valid_runs (D12, default 2).
         tests: [not_null]
 
   - name: mart_efficiency_trend
@@ -58,24 +63,28 @@ models:
       - name: week_start_date
         description: Monday of the local training week (grain).
         tests: [unique, not_null]
-      - name: qualifying_run_count
-        description: Qualifying runs in the week itself.
+      - name: valid_run_count
+        description: Valid runs in the week itself.
         tests: [not_null]
       - name: median_efficiency_m_per_beat
         description: The week's own median (from mart_weekly_training).
       - name: rolling_28d_median_efficiency
         description: >
-          Median across all qualifying runs in the 28 days ending with
+          Median across all valid runs in the 28 days ending with
           the week's Sunday (D13); NULL when that window holds none.
-      - name: rolling_28d_qualifying_run_count
+      - name: rolling_28d_valid_run_count
         description: Sample size behind the rolling median.
         tests: [not_null]
+      - name: avg_hr_bpm
+        description: >
+          Average HR across the week's valid runs (from
+          mart_weekly_training) — intensity context for the trend.
       - name: avg_temperature_f
-        description: The week's average qualifying-run temperature (°F).
+        description: The week's average valid-run temperature (°F).
       - name: temperature_band_key
         description: >
           D14 band of avg_temperature_f (cold/mild/warm); NULL when the
-          week has no weather-matched qualifying runs — missing context
+          week has no weather-matched valid runs — missing context
           stays missing, never a default band.
       - name: temperature_band_label
         description: Display label of the band.
@@ -91,11 +100,12 @@ models:
       an empty band has count 0 and NULL statistics, distinguishable
       from a low-efficiency band. Two explicit pseudo-band rows keep
       "not applicable" distinct from "missing": 'indoor' carries
-      qualifying treadmill runs (no outdoor weather applies), and
-      'weather unavailable' carries outdoor qualifying runs that
+      valid treadmill runs (no outdoor weather applies), and
+      'weather unavailable' carries outdoor valid runs that
       matched no observation — so the band comparison can never
-      silently overstate its coverage. Population: qualifying easy runs
-      only, banded by matched temperature_f against the seed bounds.
+      silently overstate its coverage. Population: runs with valid
+      heart-rate data, banded by matched temperature_f against the
+      seed bounds.
     columns:
       - name: period
         description: Aggregation period; 'all_time' in v1.
@@ -116,7 +126,7 @@ models:
       - name: band_label
         description: Display label (D14 wording, 'indoor', or 'weather unavailable').
         tests: [not_null]
-      - name: qualifying_run_count
+      - name: valid_run_count
         description: Sample size — the dashboard must show it with every comparison.
         tests: [not_null]
       - name: median_efficiency_m_per_beat
@@ -134,8 +144,8 @@ models:
     description: >
       One row per running activity — the consumer-facing quality view
       the dashboard's eligibility table reads. Carries the run's
-      efficiency value (computed for EVERY heart-rate-carrying run,
-      hard efforts included), the D9 qualifying verdict with its
+      efficiency value (computed for EVERY heart-rate-carrying run),
+      the D9 (revised v1.1) validity verdict with its data-validity
       exclusion reason, weather context with a per-run temperature-band
       label (indoor / D14 band / weather unavailable), and drift
       context (decoupling or the D16 exclusion reason) when the run is
@@ -147,14 +157,16 @@ models:
         tests: [unique, not_null]
       - name: aerobic_efficiency_m_per_heartbeat
         description: >
-          D10 metric for this run regardless of eligibility; NULL only
-          when HR is absent. Trend/band marts aggregate qualifying runs
+          D10 metric for this run regardless of validity; NULL only
+          when HR is absent. Trend/band marts aggregate valid runs
           only — this column shows every run's value anyway.
-      - name: is_qualifying
-        description: D9 easy-run verdict (what the aggregates count).
+      - name: is_valid
+        description: >
+          D9 (revised v1.1) validity verdict — what the aggregates
+          count.
         tests: [not_null]
       - name: exclusion_reason
-        description: First failing D9 rule; NULL when qualifying.
+        description: First failing validity rule; NULL when valid.
       - name: temperature_band_label
         description: >
           Per-run band: 'indoor' (trainer; weather not applicable), a
@@ -217,5 +229,5 @@ models:
         description: Sample size behind the rolling median.
         tests: [not_null]
       - name: is_sufficient
-        description: drift_run_count >= min_weekly_qualifying_runs (D12).
+        description: drift_run_count >= min_weekly_valid_runs (D12).
         tests: [not_null]

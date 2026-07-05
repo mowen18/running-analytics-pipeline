@@ -14,17 +14,17 @@ seed-paths: ["seeds"]
 target-path: target
 clean-targets: [target, dbt_packages]
 
-# Metric thresholds (decisions D9, D12, D13 + the agreed 45-minute
-# long-run rule). Overridable with --vars, never hardcoded in model SQL.
+# Metric thresholds (D9 as revised by v1.1 data-validity rules, D12,
+# D13 + the agreed 45-minute long-run rule). Overridable with --vars,
+# never hardcoded in model SQL.
 vars:
-  easy_hr_max: 152
-  easy_min_moving_minutes: 30
-  easy_pace_min_per_mi_floor: 4.0
-  easy_pace_min_per_mi_ceiling: 20.0
+  valid_run_min_moving_minutes: 15
+  pace_min_per_mi_floor: 4.0
+  pace_min_per_mi_ceiling: 20.0
   hr_sanity_floor: 90
   hr_sanity_ceiling: 200
   long_run_min_moving_minutes: 45
-  min_weekly_qualifying_runs: 2
+  min_weekly_valid_runs: 2
   trend_window_days: 28
   # Drift analysis window (D16) and the two checks D16 left
   # unquantified, settled as: coverage = average sample spacing within

@@ -157,7 +157,7 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     rows = db.execute(
         """
         SELECT activity_id, weather_available, temperature_c, weather_match_minutes,
-               easy_run_eligible, long_run_eligible, pace_min_per_mi
+               long_run_eligible, pace_min_per_mi
         FROM analytics.fct_runs ORDER BY activity_id
         """
     ).fetchall()
@@ -167,13 +167,12 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     assert outdoor[1] is True  # matched despite the nearer all-NULL row
     assert outdoor[2] == Decimal("20.0")  # the 09:00 observation, not NULL
     assert outdoor[3] == 47
-    # 50 min moving, HR 145 <= 152, pace ~8 min/mi, untagged: easy + long.
-    assert (outdoor[4], outdoor[5]) == (True, True)
-    assert outdoor[6] == Decimal("8.05")
+    assert outdoor[4] is True  # 50 min moving >= the 45-minute long-run bar
+    assert outdoor[5] == Decimal("8.05")
 
     assert treadmill[1] is False  # no coordinates: explicit, not an error
     assert treadmill[2] is None  # missing weather stays NULL, never zero
-    assert (treadmill[4], treadmill[5]) == (False, True)  # no HR; 50 min
+    assert treadmill[4] is True  # 50 min moving
 
     # The map-privacy fallback: coordinates came from the resolved
     # activity_coordinates row, so weather still matches (11:00 obs at
@@ -184,7 +183,7 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
 
 
 def outdoor_run(db, activity_id, *, day, hr, cell="12.34_-56.78", temp_c=15.0, **kwargs):
-    """A qualifying-shaped run plus a matching observation at its cell.
+    """A valid-shaped run plus a matching observation at its cell.
 
     Defaults give speed 200 m/min (10 km in 50 min), so efficiency is
     200 / hr — hand-checkable. temp_c=None skips the weather row so the
@@ -206,24 +205,31 @@ def outdoor_run(db, activity_id, *, day, hr, cell="12.34_-56.78", temp_c=15.0, *
 
 @pytest.mark.integration
 def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
-    # ── Week of Mon 2026-06-01: two qualifying runs (sufficient per D12).
+    # ── Week of Mon 2026-06-01: two valid runs (sufficient per D12).
     # temp_c values are chosen so temperature_f lands exactly on the D14
     # band edges after staging's 1-dp rounding: 9.94°C -> 49.9°F (cold),
     # 10.0°C -> 50.0°F (mild).
     outdoor_run(db, 1, day="2026-06-02", hr=140.0, cell="10.00_10.00", temp_c=9.94)
     outdoor_run(db, 2, day="2026-06-04", hr=150.0, cell="11.00_11.00", temp_c=10.0)
-    # ── Week of Mon 2026-06-08: one qualifying run without weather
-    # (insufficient), plus one run per exclusion rule.
+    # ── Week of Mon 2026-06-08: a valid run without weather, two runs
+    # the old D9 ladder excluded (race tag, hard effort) that are VALID
+    # under v1.1, and one run per remaining data-validity rule.
     outdoor_run(db, 3, day="2026-06-09", hr=145.0, temp_c=None)
-    outdoor_run(db, 4, day="2026-06-10", hr=150.0, workout_type=1)  # race
+    outdoor_run(db, 4, day="2026-06-10", hr=150.0, workout_type=1)  # race: valid now
     outdoor_run(db, 5, day="2026-06-11", hr=None)  # no HR
-    outdoor_run(db, 6, day="2026-06-12", hr=160.0)  # above easy max
-    outdoor_run(db, 7, day="2026-06-13", hr=140.0, moving_time=1200, elapsed_time=1300)
+    outdoor_run(db, 6, day="2026-06-12", hr=160.0)  # hard effort: valid now
+    # 10 min moving at an in-bounds pace (2 km), so the duration rung —
+    # not the pace rung that precedes it — is the one that fires.
+    outdoor_run(
+        db, 7, day="2026-06-13", hr=140.0, distance=2000.0, moving_time=600, elapsed_time=700
+    )
+    outdoor_run(db, 11, day="2026-06-08", hr=210.0)  # outside sanity band
+    outdoor_run(db, 12, day="2026-06-14", hr=140.0, distance=1000.0)  # ~80 min/mi
     # ── Week of Mon 2026-06-15: the 70°F edge — 21.11°C -> 70.0°F stays
     # mild per D14's "50-70"; 21.17°C -> 70.1°F is warm.
     outdoor_run(db, 8, day="2026-06-16", hr=145.0, cell="12.00_12.00", temp_c=21.11)
     outdoor_run(db, 9, day="2026-06-17", hr=145.0, cell="13.00_13.00", temp_c=21.17)
-    # ── Qualifying treadmill run (isolated week of Mon 2026-05-18):
+    # ── Valid treadmill run (isolated week of Mon 2026-05-18):
     # must land in the explicit 'indoor' pseudo-band, not 'no_weather'.
     insert_activity(
         db,
@@ -239,7 +245,8 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     result = run_dbt("build")
     assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
 
-    # Exclusion reasons: first failing D9 rule, never a silent filter.
+    # Exclusion reasons: first failing validity rule (v1.1 order),
+    # never a silent filter — and no intensity/intent rungs anymore.
     reasons = dict(
         db.execute(
             "SELECT activity_id, exclusion_reason FROM intermediate.int_run_efficiency ORDER BY 1"
@@ -249,13 +256,15 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         1: None,
         2: None,
         3: None,
-        4: "tagged as race",
+        4: None,  # race tag no longer excludes (v1.1)
         5: "no heart rate data",
-        6: "average HR above easy maximum (152 bpm)",
-        7: "moving time under 30 minutes",
+        6: None,  # no intensity ceiling anymore (v1.1)
+        7: "moving time under 15 minutes",
         8: None,
         9: None,
-        10: None,  # treadmill runs qualify per D9 — weather isn't a rule
+        10: None,  # treadmill runs are valid — weather isn't a rule
+        11: "average HR outside 90–200 bpm sanity band",
+        12: "pace outside 4.0–20.0 min/mi bounds",
     }
 
     # Efficiency traces to documented fields: 200 m/min at 140 bpm.
@@ -268,7 +277,7 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     # Weekly mart: D12 sufficiency and NULL-not-zero efficiency.
     weeks = db.execute(
         """
-        SELECT week_start_date::text, qualifying_run_count, is_sufficient,
+        SELECT week_start_date::text, valid_run_count, is_sufficient,
                median_efficiency_m_per_beat
         FROM analytics.mart_weekly_training ORDER BY week_start_date
         """
@@ -276,22 +285,23 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     assert [(w[0], w[1], w[2]) for w in weeks] == [
         ("2026-05-18", 1, False),  # the treadmill run's isolated week
         ("2026-06-01", 2, True),
-        ("2026-06-08", 1, False),  # excluded runs don't count toward D12
+        ("2026-06-08", 3, True),  # race + hard effort now count (v1.1)
         ("2026-06-15", 2, True),
     ]
     # Week 1 median interpolates between 200/150 and 200/140.
     assert float(weeks[1][3]) == pytest.approx((200.0 / 150.0 + 200.0 / 140.0) / 2, abs=0.0001)
 
-    # Trend mart: the 28-day window ending Sun 2026-06-21 spans all five
-    # qualifying runs; the week's own band comes from its avg temperature.
+    # Trend mart: the 28-day window ending Sun 2026-06-21 spans all
+    # seven valid runs after Sun 2026-05-24 (the treadmill run on 05-20
+    # falls outside); the week's band comes from its avg temperature.
     (rolling_count, rolling_median, band) = db.execute(
         """
-        SELECT rolling_28d_qualifying_run_count, rolling_28d_median_efficiency,
+        SELECT rolling_28d_valid_run_count, rolling_28d_median_efficiency,
                temperature_band_key
         FROM analytics.mart_efficiency_trend WHERE week_start_date = '2026-06-15'
         """
     ).fetchone()
-    assert rolling_count == 5
+    assert rolling_count == 7
     assert float(rolling_median) == pytest.approx(200.0 / 145.0, abs=0.0001)
     assert band == "warm"  # avg(70.0, 70.1) = 70.05 -> rounds into warm
 
@@ -300,22 +310,24 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         row[0]: (row[1], row[2])
         for row in db.execute(
             """
-            SELECT band_key, qualifying_run_count, median_efficiency_m_per_beat
+            SELECT band_key, valid_run_count, median_efficiency_m_per_beat
             FROM analytics.mart_efficiency_by_temp_band
             """
         ).fetchall()
     }
     assert bands["cold"][0] == 1  # 49.9°F
-    assert bands["mild"][0] == 2  # 50.0°F and 70.0°F — both edges inclusive
+    # 50.0°F and 70.0°F (both edges inclusive) plus the race and the
+    # hard effort at the 59.0°F default.
+    assert bands["mild"][0] == 4
     assert bands["warm"][0] == 1  # 70.1°F
     # "Not applicable" and "missing" stay distinct: the treadmill run is
     # indoor, the coordinate-less outdoor run is weather-unavailable.
     assert bands["indoor"][0] == 1
     assert bands["no_weather"][0] == 1
-    assert sum(count for count, _ in bands.values()) == 6  # conservation
+    assert sum(count for count, _ in bands.values()) == 8  # conservation
 
     # Run-level quality mart: every run visible with its verdict, band,
-    # and an efficiency value even when excluded (hard efforts included).
+    # and an efficiency value even when invalid.
     quality = {
         row[0]: (row[1], row[2], row[3])
         for row in db.execute(
@@ -324,9 +336,10 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
             "FROM analytics.mart_run_quality"
         ).fetchall()
     }
-    assert len(quality) == 10  # every run, qualifying or not
-    assert quality[4][0] == "tagged as race"
-    assert quality[4][2] is not None  # excluded runs keep their value
+    assert len(quality) == 12  # every run, valid or not
+    assert quality[4][0] is None  # the race counts now (v1.1)
+    assert quality[11][0] == "average HR outside 90–200 bpm sanity band"
+    assert quality[11][2] is not None  # invalid runs keep their value
     assert quality[1][1] == "< 50°F"  # banded per-run by its own temp
     assert quality[3][1] == "weather unavailable"  # outdoor, unmatched
     assert quality[10][1] == "indoor"  # trainer: not applicable, not missing
@@ -383,8 +396,8 @@ def steady_stream(*, seconds=3600, step=1, first_half_hr=140.0, second_half_hr=1
     return elapsed, hr, velocity, moving
 
 
-def drift_run(db, activity_id, *, day, moving_time=3600, hr=145.0):
-    """An easy-qualifying, drift-length activity (no weather needed)."""
+def drift_run(db, activity_id, *, day, moving_time=3600, hr=145.0, **kwargs):
+    """An HR-carrying, drift-length activity (no weather needed)."""
     insert_activity(
         db,
         activity_id,
@@ -396,16 +409,19 @@ def drift_run(db, activity_id, *, day, moving_time=3600, hr=145.0):
         moving_time=moving_time,
         elapsed_time=moving_time + 100,
         average_heartrate=hr,
+        **kwargs,
     )
 
 
 @pytest.mark.integration
 def test_drift_decoupling_formula_and_analysis_window(db):
     # Two clean runs in one week: decoupling = (1 - HR1/HR2) * 100
-    # exactly, because speed is constant across the window.
+    # exactly, because speed is constant across the window. The second
+    # is tagged as a race: intensity/intent no longer gates drift
+    # candidacy (D15 revised v1.1) — only duration and HR do.
     drift_run(db, 1, day="2026-06-15")
     insert_stream(db, 1, samples=steady_stream())  # 140 -> 150: 6.667 %
-    drift_run(db, 2, day="2026-06-17")
+    drift_run(db, 2, day="2026-06-17", workout_type=1)
     insert_stream(db, 2, samples=steady_stream(second_half_hr=145.0))  # 3.448 %
     # Excluded candidates, one per D16 ladder rung that data can reach:
     drift_run(db, 3, day="2026-06-18")  # no streams row at all
@@ -417,10 +433,13 @@ def test_drift_decoupling_formula_and_analysis_window(db):
     insert_stream(db, 6, samples=steady_stream(pause=(600, 1420)))  # ~30 % paused
     drift_run(db, 7, day="2026-06-22")
     insert_stream(db, 7, samples=steady_stream(step=5))  # 5 s gaps > 3 s max
-    # Not a candidate: short easy run (< 45 min) must not appear at all.
+    # Not a candidate: short run (< 45 min) must not appear at all.
     insert_activity(
         db, 8, start_latlng=None, average_heartrate=140.0, moving_time=2400, elapsed_time=2500
     )
+    # Not a candidate either: long enough, but no HR (the other half of
+    # the revised D15 gate).
+    drift_run(db, 9, day="2026-06-23", hr=None)
     db.commit()
 
     result = run_dbt("build")
@@ -433,7 +452,7 @@ def test_drift_decoupling_formula_and_analysis_window(db):
             "FROM intermediate.int_run_drift_halves"
         ).fetchall()
     }
-    assert set(halves) == {1, 2, 3, 4, 5, 6, 7}  # 8 is not a candidate
+    assert set(halves) == {1, 2, 3, 4, 5, 6, 7}  # 8 (short) and 9 (no HR) are not candidates
 
     # The formula, exactly (acceptance criterion 5).
     assert float(halves[1][0]) == pytest.approx((1 - 140 / 150) * 100, abs=0.01)

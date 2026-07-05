@@ -40,9 +40,6 @@ class Settings(BaseSettings):
     sync_start_date: date = date(2024, 1, 1)
     sync_overlap_days: int = 14
 
-    # Metrics configuration (decision D9)
-    easy_hr_max: int = 152
-
     # Weather ingestion (Phase 2). Open-Meteo needs no credentials; these
     # only bound API usage far below the ~10k/day free tier.
     weather_request_budget: int = 500

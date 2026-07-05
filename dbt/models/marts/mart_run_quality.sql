@@ -1,11 +1,11 @@
 {#
   The run-level quality view: one row per running activity with its
-  efficiency value, eligibility verdict, weather context, and drift
+  efficiency value, validity verdict, weather context, and drift
   context. This is the mart that lets the dashboard answer "why didn't
   run X count?" without reaching into intermediate models (D19:
   marts only). Efficiency is computed for EVERY heart-rate-carrying run
-  — hard efforts included — while the trend/band marts aggregate
-  qualifying easy runs only; both facts are visible here side by side.
+  while the trend/band marts aggregate runs with valid HR data (D9
+  revised v1.1); both facts are visible here side by side.
 #}
 
 with runs as (
@@ -36,7 +36,7 @@ select
     runs.pace_min_per_mi,
     runs.average_hr_bpm,
     runs.aerobic_efficiency_m_per_heartbeat,
-    runs.is_qualifying,
+    runs.is_valid,
     runs.exclusion_reason,
     runs.long_run_eligible,
     runs.weather_available,
