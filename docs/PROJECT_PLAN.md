@@ -711,3 +711,27 @@ D3 schemas, D4 dbt location, and D19 marts-only app reads are untouched):**
   (v1.1 above, this block); "Release 1.x" numbers delivery milestones
   (Release 1.0 = MVP, Release 1.1 = cardiac drift, Release 1.2 = the
   optional Phase 7 stretch). Revision v1.2 is unrelated to Release 1.2.
+
+### Revision v1.2 follow-up — 2026-07-08 — Streams exception restricted to intermediate
+
+The fct_drift_candidates relocation silently carried its direct
+`source('raw_strava', 'streams')` read into core, and the "Documented
+sources exception" bullet above codified that widening ("intermediate
+AND core"). Both were accidental. Verified inventory of what core read
+from the source: `activity_id` (row absence = "streams not yet
+loaded"), `ingestion_status` ("unavailable"/"failed" rungs), and a
+payload key-existence probe on time/heartrate/velocity_smooth
+("missing required stream types" rung) — none derivable from
+int_run_stream_samples, which keeps only success rows and unnests to
+sample grain (never-fetched / unavailable / failed / zero-samples all
+collapse to zero rows there).
+
+**Corrected rule (supersedes the sources-exception bullet above):**
+source() is permitted in staging; the single exception is
+raw_strava.streams, readable from INTERMEDIATE models only. Core and
+marts contain zero source() reads. fct_drift_candidates takes its
+stream state from the new activity-grain intermediate
+`int_run_stream_state` (the former stream_state CTE, verbatim),
+keeping output byte-identical. The layering guard encodes the
+exception per-layer and per-source-table, and was proven to fail on
+the core read before the fix.

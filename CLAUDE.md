@@ -16,7 +16,9 @@
   efficiency and feeds fct_runs (37 cols; original 34 unchanged); marts
   read core/seeds/marts only; int_run_drift_halves is now core
   fct_drift_candidates (analytics schema). is_valid := exclusion_reason
-  is null; layering enforced by tests/test_dbt_layering.py.
+  is null; layering enforced by tests/test_dbt_layering.py. source()
+  lives in staging only, except raw_strava.streams readable from
+  intermediate (int_run_stream_state feeds fct_drift_candidates).
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
