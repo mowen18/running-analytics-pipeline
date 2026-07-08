@@ -99,8 +99,19 @@ models:
       second half improved.
     columns:
       - name: activity_id
-        description: Strava activity id (one row per drift candidate).
-        tests: [unique, not_null]
+        description: >
+          Strava activity id (one row per drift candidate). Every
+          candidate must exist in fct_runs — mart_run_drift inner-joins
+          run context on this id, so the relationship is a tested
+          contract, not just a structural accident of both models
+          descending from int_run_efficiency.
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_runs')
+                field: activity_id
       - name: window_duration_s
         description: Analysis-window length after trimming; NULL when streams are absent.
       - name: paused_fraction

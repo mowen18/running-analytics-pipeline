@@ -19,6 +19,14 @@
   is null; layering enforced by tests/test_dbt_layering.py. source()
   lives in staging only, except raw_strava.streams readable from
   intermediate (int_run_stream_state feeds fct_drift_candidates).
+- Revision v1.3 is implemented: trend-mart rolling columns have static
+  names (rolling_median_efficiency / rolling_valid_run_count in
+  mart_efficiency_trend; rolling_median_decoupling_pct /
+  rolling_drift_run_count in mart_drift_trend) — trend_window_days
+  changes the window, never the interface. The D14 band range predicate
+  renders from the temperature_band_range macro (the seed stays the
+  sole bounds definition). fct_drift_candidates.activity_id carries a
+  relationships test to fct_runs (proven red on an orphan row first).
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
