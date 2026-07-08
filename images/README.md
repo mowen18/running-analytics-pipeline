@@ -1,10 +1,9 @@
 # Images
 
-Deferred until real HR-carrying runs populate the marts (see "Known
-limitations" in the root README):
+Pending capture now that the marts are populated (see "Known
+limitations" in the root README). dbt lineage needs no capture — it
+renders directly in the root README via `make dbt-dag`.
 
-- `dbt-lineage.png` — capture from `make dbt-docs` (Lineage Graph view,
-  full DAG, light theme).
 - `view-efficiency.png`, `view-weekly.png`, `view-drift.png` — one
   screenshot per dashboard view from `make app`, taken with populated
   trend data and visible sample counts.

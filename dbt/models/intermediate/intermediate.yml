@@ -48,7 +48,10 @@ models:
       runs are NEVER silently filtered: each carries a human-readable
       exclusion_reason (the FIRST failing rule in priority order: data
       availability, HR sanity, pace bounds, minimum duration). Feeds
-      fct_runs, which projects this model into core for the marts.
+      fct_runs, which projects this model into core for the marts; as
+      fct_runs' only parent it also carries the weather context (the
+      matched observation and match flag) through from
+      int_runs_with_weather.
       Efficiency is an observational signal, not proof of physiological
       improvement — approved framing lives in the README's metric
       definitions.

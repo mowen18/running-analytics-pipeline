@@ -259,24 +259,27 @@ The dbt project lives in `dbt/` (decision D4) and is driven entirely
 through the Make targets above; `dbt/profiles.yml` is auto-copied from
 the committed example on first run and reads connection values from the
 same `.env` contract as the Python pipeline — no separate credentials.
+One node renders without edges by design: `raw_strava.sync_state` holds
+operational sync watermarks, declared in `sources.yml` for source
+inventory but deliberately not modeled downstream.
 
 | Layer | Model | Schema | Grain |
 |---|---|---|---|
 | Staging | `stg_strava__activities` | `staging` | one row per activity, any sport type |
 | Staging | `stg_weather__hourly` | `staging` | one row per D7 cell + UTC hour, metric & imperial units |
-| Intermediate | `int_runs_with_weather` | `intermediate` | one row per running activity + nearest qualifying observation |
-| Intermediate | `int_run_efficiency` | `intermediate` | one row per running activity — derived measures + efficiency and validity verdict (feeds `fct_runs`) |
-| Core | `fct_runs` | `analytics` | one row per running activity — the mart-facing contract: measures, weather, validity + efficiency |
-| Mart | `mart_weekly_training` | `analytics` | one row per training week |
-| Mart | `mart_efficiency_trend` | `analytics` | one row per week + 28-day rolling median |
-| Mart | `mart_efficiency_by_temp_band` | `analytics` | one row per D14 temp band (+ explicit weather-unavailable row) |
-| Mart | `mart_run_quality` | `analytics` | one row per running activity + quality verdicts (validity, band, drift) |
-| Seed | `temperature_bands` | `analytics` | the D14 bands, defined once, joined by range everywhere |
+| Intermediate | `int_run_efficiency` | `intermediate` | one row per running activity — derived measures + efficiency and validity verdict; carries the weather context through to `fct_runs`, its only parent |
 | Intermediate | `int_run_stream_samples` | `intermediate` | one row per activity + aligned stream sample |
 | Intermediate | `int_run_stream_state` | `intermediate` | one row per stream-fetch attempt: status + required-array presence |
+| Intermediate | `int_runs_with_weather` | `intermediate` | one row per running activity + nearest qualifying observation |
 | Core | `fct_drift_candidates` | `analytics` | one row per drift candidate + halves and exclusion verdict |
-| Mart | `mart_run_drift` | `analytics` | one row per analyzed drift run |
+| Core | `fct_runs` | `analytics` | one row per running activity — the mart-facing contract: measures, weather, validity + efficiency |
 | Mart | `mart_drift_trend` | `analytics` | one row per week of drift runs + rolling median |
+| Mart | `mart_efficiency_by_temp_band` | `analytics` | one row per D14 temp band (+ explicit weather-unavailable row) |
+| Mart | `mart_efficiency_trend` | `analytics` | one row per week + 28-day rolling median |
+| Mart | `mart_run_drift` | `analytics` | one row per analyzed drift run |
+| Mart | `mart_run_quality` | `analytics` | one row per running activity + quality verdicts (validity, band, drift) |
+| Mart | `mart_weekly_training` | `analytics` | one row per training week |
+| Seed | `temperature_bands` | `analytics` | the D14 bands, defined once, joined by range everywhere |
 
 Conventions worth knowing: the running-activity filter
 (Run/TrailRun/VirtualRun) is applied after staging, never in it; weather
@@ -309,7 +312,7 @@ only 2-decimal cell keys appear in logs and stored keys.
 **Aerobic efficiency (D10)** — the project's primary metric:
 
 ```text
-aerobic_efficiency_m_per_heartbeat = speed_m_per_minute / average_hr_bpm
+aerobic_efficiency_m_per_heartbeat = speed_m_per_min / average_hr_bpm
 ```
 
 Approximate meters traveled per heartbeat. Higher = faster at the same
