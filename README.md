@@ -13,7 +13,8 @@ tests, and docs — the dashboard is a thin cap.
 * How is weekly volume changing alongside these efficiency measures?
 
 **Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are
-locked; Revision v1.1 supersedes D9 and amends D15).
+locked; Revision v1.1 supersedes D9 and amends D15; Revision v1.2 corrects
+the dbt layering — output-invariant).
 **Status:** all six phases complete (Release 1.1 + presentation layer).
 
 ## Architecture

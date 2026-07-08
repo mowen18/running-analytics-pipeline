@@ -11,6 +11,8 @@
   4:00–20:00, ≥15 min). easy_run_eligible / easy_hr_max and the
   "qualifying easy runs" vocabulary are gone; marts expose
   valid_run_count etc. Drift candidacy is ≥45 min moving + HR present
+- Revision v1.2 (layering correction: staging → intermediate → core →
+  marts, output-invariant) is approved; implementation in progress.
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433

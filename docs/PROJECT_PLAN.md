@@ -648,3 +648,66 @@ noise source. Difficulty categorization is no longer a project priority.
 - Exclusion reasons remain first-class (never silent), but the ladder now
   contains only data-validity rungs: no HR → HR out of sanity range →
   pace out of bounds → under minimum duration.
+
+## Revision v1.2 — 2026-07-08 — Correct the dbt layering inversion
+
+**Rationale:** The implemented dbt graph inverted the intended layering:
+`fct_runs` (core) fed `int_run_efficiency` (intermediate), every mart read
+the intermediate model, and core fed nothing downstream. The Phase 3/4
+model inventories describe that inverted shape. This revision corrects
+only the DIRECTION of the reference graph:
+
+    before: stg_* -> int_runs_with_weather -> fct_runs -> int_run_efficiency
+            -> {all six marts, int_run_drift_halves}
+    after:  stg_* -> int_runs_with_weather -> int_run_efficiency -> fct_runs
+            -> {mart_weekly_training, mart_efficiency_trend,
+                mart_efficiency_by_temp_band, mart_run_quality, mart_run_drift};
+            int_run_efficiency -> fct_drift_candidates
+            -> {mart_run_drift, mart_run_quality}
+
+The refactor is OUTPUT-INVARIANT: no metric formula, threshold, grain, or
+value changes anywhere; all six marts stay byte-identical, and `fct_runs`
+keeps its 34 columns byte-identical while additionally exposing the three
+analytic columns so marts can read core.
+
+**Revised decisions (design clarifications — no D-number is superseded;
+D3 schemas, D4 dbt location, and D19 marts-only app reads are untouched):**
+
+- **Layering (new):** model references follow staging → intermediate →
+  core → marts. `int_run_efficiency` reads `int_runs_with_weather` and
+  computes BOTH the derived measures (previously in `fct_runs`) and the
+  D9/D10 analytic columns; `fct_runs` becomes an explicit-column core
+  projection of `int_run_efficiency` — its previous 34 columns in the
+  same order, plus `aerobic_efficiency_m_per_heartbeat`, `is_valid`,
+  `exclusion_reason`. Enforced by a manifest-based layering test.
+- **Strict mart matrix (new):** marts may reference core models, seeds,
+  and other marts ONLY. The two existing mart-to-mart trend edges
+  (`mart_efficiency_trend` ← `mart_weekly_training`,
+  `mart_drift_trend` ← `mart_run_drift`) remain allowed.
+- **fct_drift_candidates (relocation):** `int_run_drift_halves` moves to
+  core as `fct_drift_candidates` — same SQL body, same
+  one-row-per-drift-candidate grain, same columns; materialization
+  follows the core folder config (view → table, schema `intermediate`
+  → `analytics`). `mart_run_drift` and `mart_run_quality` read it there.
+- **Documented sources exception (new):** stream payloads are
+  deliberately unstaged (JSONB key/array probing; a staging pass would
+  add no typing value), so intermediate AND core models may read
+  `source('raw_strava', 'streams')` directly. This is the only
+  sanctioned model read of a raw source outside staging.
+- **is_valid single encoding (amends the v1.1 note):** `is_valid` is
+  DEFINED as `exclusion_reason is null`; the exclusion-reason CASE
+  ladder is the single encoding of the D9 (revised v1.1) validity
+  rules. The independent boolean AND-chain and its equivalence test
+  (`assert_exclusion_reason_matches_validity`) are retired; coverage is
+  the ladder's own column tests plus this refactor's output-invariance
+  comparison.
+- **Model inventory (corrected):** the Phase 3/Phase 4 model tables are
+  superseded on layer placement. Current shape — intermediate:
+  `int_runs_with_weather`, `int_run_efficiency`,
+  `int_run_stream_samples`; core: `fct_runs`, `fct_drift_candidates`;
+  marts: unchanged (six). `int_run_efficiency` is UPSTREAM of
+  `fct_runs`, not downstream.
+- **Numbering note:** "Revision v1.x" numbers revisions of THIS document
+  (v1.1 above, this block); "Release 1.x" numbers delivery milestones
+  (Release 1.0 = MVP, Release 1.1 = cardiac drift, Release 1.2 = the
+  optional Phase 7 stretch). Revision v1.2 is unrelated to Release 1.2.
