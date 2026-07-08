@@ -22,12 +22,7 @@ with candidates as (
 
 stream_state as (
 
-    select
-        activity_id,
-        ingestion_status,
-        (payload ? 'time' and payload ? 'heartrate' and payload ? 'velocity_smooth')
-            as has_required_arrays
-    from {{ source('raw_strava', 'streams') }}
+    select * from {{ ref('int_run_stream_state') }}
 
 ),
 

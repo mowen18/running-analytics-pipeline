@@ -123,3 +123,33 @@ models:
         description: HR and velocity both present and instrument-sane.
         tests: [not_null]
 
+  - name: int_run_stream_state
+    description: >
+      One row per stream-fetch attempt (activity grain —
+      raw_strava.streams is keyed by activity_id): the fetch status and
+      whether the payload carries the arrays drift analysis requires.
+      Exists so fct_drift_candidates can distinguish "never fetched" /
+      "unavailable" / "failed" / "arrays missing" without reading the
+      raw source from core — raw_strava.streams is readable from
+      intermediate models ONLY (Revision v1.2 follow-up).
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per fetch attempt).
+        tests: [unique, not_null]
+      - name: ingestion_status
+        description: >
+          success (payload stored) / unavailable (Strava has no
+          streams — terminal) / failed (transient, retried by the next
+          backfill).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['success', 'failed', 'unavailable']
+      - name: has_required_arrays
+        description: >
+          The payload carries the time, heartrate, and velocity_smooth
+          arrays drift analysis requires. Never NULL — the raw payload
+          column is NOT NULL ({} for failed/unavailable rows).
+        tests: [not_null]
+

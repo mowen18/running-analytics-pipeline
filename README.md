@@ -212,6 +212,7 @@ flowchart LR
     subgraph intermediate["Intermediate"]
         model_running_analytics_int_run_efficiency["int_run_efficiency"]
         model_running_analytics_int_run_stream_samples["int_run_stream_samples"]
+        model_running_analytics_int_run_stream_state["int_run_stream_state"]
         model_running_analytics_int_runs_with_weather["int_runs_with_weather"]
     end
 
@@ -239,6 +240,7 @@ flowchart LR
     model_running_analytics_int_run_efficiency --> model_running_analytics_fct_drift_candidates
     model_running_analytics_int_run_efficiency --> model_running_analytics_fct_runs
     model_running_analytics_int_run_stream_samples --> model_running_analytics_fct_drift_candidates
+    model_running_analytics_int_run_stream_state --> model_running_analytics_fct_drift_candidates
     model_running_analytics_int_runs_with_weather --> model_running_analytics_int_run_efficiency
     model_running_analytics_mart_run_drift --> model_running_analytics_mart_drift_trend
     model_running_analytics_mart_weekly_training --> model_running_analytics_mart_efficiency_trend
@@ -249,8 +251,8 @@ flowchart LR
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
     source_running_analytics_raw_strava_activities --> model_running_analytics_stg_strava__activities
     source_running_analytics_raw_strava_activity_coordinates --> model_running_analytics_stg_strava__activities
-    source_running_analytics_raw_strava_streams --> model_running_analytics_fct_drift_candidates
     source_running_analytics_raw_strava_streams --> model_running_analytics_int_run_stream_samples
+    source_running_analytics_raw_strava_streams --> model_running_analytics_int_run_stream_state
     source_running_analytics_raw_weather_hourly --> model_running_analytics_stg_weather__hourly
 ```
 <!-- dbt-dag:end -->
