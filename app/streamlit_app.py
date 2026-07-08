@@ -136,10 +136,10 @@ EFFICIENCY_TREND_COLUMNS = {
     "median_efficiency_m_per_beat": st.column_config.NumberColumn(
         "Weekly median (m/beat)", format="%.4f"
     ),
-    "rolling_28d_median_efficiency": st.column_config.NumberColumn(
+    "rolling_median_efficiency": st.column_config.NumberColumn(
         "28-day median (m/beat)", format="%.4f"
     ),
-    "rolling_28d_valid_run_count": st.column_config.NumberColumn("28-day (n)"),
+    "rolling_valid_run_count": st.column_config.NumberColumn("28-day (n)"),
     # Intensity context: aggregates no longer filter on effort (v1.1),
     # so the mix behind each weekly point stays visible.
     "avg_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
@@ -218,17 +218,17 @@ def efficiency_view():
             .properties(height=320)
         )
         rolling = (
-            alt.Chart(sufficient.dropna(subset=["rolling_28d_median_efficiency"]))
+            alt.Chart(sufficient.dropna(subset=["rolling_median_efficiency"]))
             .mark_line(color=BLUE, strokeWidth=2, point=alt.OverlayMarkDef(color=BLUE, size=36))
             .encode(
                 x=alt.X("week_start_date:T", axis=axis, scale=TIME_X_SCALE),
-                y=alt.Y("rolling_28d_median_efficiency:Q", scale=y_scale),
+                y=alt.Y("rolling_median_efficiency:Q", scale=y_scale),
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
                     alt.Tooltip(
-                        "rolling_28d_median_efficiency:Q", title="28-day median", format=".4f"
+                        "rolling_median_efficiency:Q", title="28-day median", format=".4f"
                     ),
-                    alt.Tooltip("rolling_28d_valid_run_count:Q", title="runs in window (n)"),
+                    alt.Tooltip("rolling_valid_run_count:Q", title="runs in window (n)"),
                 ],
             )
         )
@@ -381,10 +381,10 @@ DRIFT_TREND_COLUMNS = {
     "week_start_date": st.column_config.DateColumn("Week", format="MMM D"),
     "drift_run_count": st.column_config.NumberColumn("Drift runs (n)"),
     "median_decoupling_pct": st.column_config.NumberColumn("Median decoupling %", format="%.2f"),
-    "rolling_28d_median_decoupling_pct": st.column_config.NumberColumn(
+    "rolling_median_decoupling_pct": st.column_config.NumberColumn(
         "28-day median %", format="%.2f"
     ),
-    "rolling_28d_drift_run_count": st.column_config.NumberColumn("28-day (n)"),
+    "rolling_drift_run_count": st.column_config.NumberColumn("28-day (n)"),
     "avg_moving_time_min": st.column_config.NumberColumn("Avg moving (min)", format="%.1f"),
     "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
     "runs_with_weather": st.column_config.NumberColumn("With weather (n)"),
@@ -437,7 +437,7 @@ def drift_view():
         )
     else:
         rolling = (
-            alt.Chart(sufficient.dropna(subset=["rolling_28d_median_decoupling_pct"]))
+            alt.Chart(sufficient.dropna(subset=["rolling_median_decoupling_pct"]))
             .mark_line(color=BLUE, strokeWidth=2, point=alt.OverlayMarkDef(color=BLUE, size=36))
             .encode(
                 x=alt.X(
@@ -446,13 +446,13 @@ def drift_view():
                     axis=week_axis(sufficient["week_start_date"]),
                     scale=TIME_X_SCALE,
                 ),
-                y=alt.Y("rolling_28d_median_decoupling_pct:Q", title="28-day median decoupling %"),
+                y=alt.Y("rolling_median_decoupling_pct:Q", title="28-day median decoupling %"),
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
                     alt.Tooltip(
-                        "rolling_28d_median_decoupling_pct:Q", title="28-day median", format=".2f"
+                        "rolling_median_decoupling_pct:Q", title="28-day median", format=".2f"
                     ),
-                    alt.Tooltip("rolling_28d_drift_run_count:Q", title="runs in window (n)"),
+                    alt.Tooltip("rolling_drift_run_count:Q", title="runs in window (n)"),
                 ],
             )
             .properties(height=280)

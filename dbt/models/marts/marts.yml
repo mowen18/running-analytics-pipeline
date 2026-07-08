@@ -68,12 +68,15 @@ models:
         tests: [not_null]
       - name: median_efficiency_m_per_beat
         description: The week's own median (from mart_weekly_training).
-      - name: rolling_28d_median_efficiency
+      - name: rolling_median_efficiency
         description: >
-          Median across all valid runs in the 28 days ending with
-          the week's Sunday (D13); NULL when that window holds none.
-      - name: rolling_28d_valid_run_count
-        description: Sample size behind the rolling median.
+          Median across all valid runs in the trailing trend_window_days
+          window (dbt var, default 28 — D13) ending with the week's
+          Sunday; NULL when that window holds none.
+      - name: rolling_valid_run_count
+        description: >
+          Sample size behind the rolling median (valid runs in the
+          trend_window_days window).
         tests: [not_null]
       - name: avg_hr_bpm
         description: >
@@ -223,10 +226,14 @@ models:
         tests: [not_null]
       - name: median_decoupling_pct
         description: The week's median decoupling (D17 sign convention).
-      - name: rolling_28d_median_decoupling_pct
-        description: Median across analyzed runs in the trailing 28 days (D13 pattern).
-      - name: rolling_28d_drift_run_count
-        description: Sample size behind the rolling median.
+      - name: rolling_median_decoupling_pct
+        description: >
+          Median across analyzed runs in the trailing trend_window_days
+          window (dbt var, default 28 — D13 pattern).
+      - name: rolling_drift_run_count
+        description: >
+          Sample size behind the rolling median (analyzed runs in the
+          trend_window_days window).
         tests: [not_null]
       - name: is_sufficient
         description: drift_run_count >= min_weekly_valid_runs (D12).

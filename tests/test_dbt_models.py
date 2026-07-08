@@ -296,7 +296,7 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     # falls outside); the week's band comes from its avg temperature.
     (rolling_count, rolling_median, band) = db.execute(
         """
-        SELECT rolling_28d_valid_run_count, rolling_28d_median_efficiency,
+        SELECT rolling_valid_run_count, rolling_median_efficiency,
                temperature_band_key
         FROM analytics.mart_efficiency_trend WHERE week_start_date = '2026-06-15'
         """

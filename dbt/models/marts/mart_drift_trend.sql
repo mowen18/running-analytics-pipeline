@@ -43,9 +43,9 @@ select
     weekly.drift_run_count,
     round(weekly.median_decoupling_pct::numeric, 2)          as median_decoupling_pct,
     round(rolling.rolling_median_decoupling_pct::numeric, 2)
-        as rolling_{{ var('trend_window_days') }}d_median_decoupling_pct,
+        as rolling_median_decoupling_pct,
     coalesce(rolling.rolling_drift_run_count, 0)
-        as rolling_{{ var('trend_window_days') }}d_drift_run_count,
+        as rolling_drift_run_count,
     round(weekly.avg_moving_time_min::numeric, 1)            as avg_moving_time_min,
     round(weekly.avg_temperature_f::numeric, 1)              as avg_temperature_f,
     weekly.runs_with_weather,

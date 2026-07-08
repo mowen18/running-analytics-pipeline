@@ -41,9 +41,9 @@ select
     weekly.valid_run_count,
     weekly.median_efficiency_m_per_beat,
     round(rolling.rolling_median_efficiency::numeric, 4)
-        as rolling_{{ var('trend_window_days') }}d_median_efficiency,
+        as rolling_median_efficiency,
     coalesce(rolling.rolling_valid_run_count, 0)
-        as rolling_{{ var('trend_window_days') }}d_valid_run_count,
+        as rolling_valid_run_count,
     weekly.avg_hr_bpm,
     weekly.avg_temperature_f,
     bands.band_key   as temperature_band_key,
