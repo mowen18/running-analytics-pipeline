@@ -104,6 +104,7 @@ make dbt-build        # build all dbt models and run their tests
 make dbt-test         # dbt tests only
 make dbt-freshness    # source freshness (raw fetched_at ages)
 make dbt-docs         # generate + serve dbt documentation locally
+make dbt-dag          # regenerate the dbt DAG diagram embedded in this README
 make test             # pytest (all external HTTP mocked; DB-integration
                       # tests skip visibly when Postgres is down)
 make lint             # ruff check
@@ -185,6 +186,73 @@ the same rate-limit contract as the other backfills), else an explicit
 resolved coordinate over the payload.
 
 ## Warehouse models (dbt)
+
+<!-- dbt-dag:start -->
+```mermaid
+flowchart LR
+
+    subgraph sources["Sources"]
+        source_running_analytics_raw_strava_activities[("raw_strava.activities")]
+        source_running_analytics_raw_strava_activity_coordinates[("raw_strava.activity_coordinates")]
+        source_running_analytics_raw_strava_streams[("raw_strava.streams")]
+        source_running_analytics_raw_strava_sync_state[("raw_strava.sync_state")]
+        source_running_analytics_raw_weather_hourly[("raw_weather.hourly")]
+    end
+
+    subgraph seeds["Seeds"]
+        seed_running_analytics_temperature_bands(["temperature_bands"])
+    end
+
+    subgraph staging["Staging"]
+        model_running_analytics_stg_strava__activities["stg_strava__activities"]
+        model_running_analytics_stg_weather__hourly["stg_weather__hourly"]
+    end
+
+    subgraph intermediate["Intermediate"]
+        model_running_analytics_int_run_drift_halves["int_run_drift_halves"]
+        model_running_analytics_int_run_efficiency["int_run_efficiency"]
+        model_running_analytics_int_run_stream_samples["int_run_stream_samples"]
+        model_running_analytics_int_runs_with_weather["int_runs_with_weather"]
+    end
+
+    subgraph core["Core"]
+        model_running_analytics_fct_runs["fct_runs"]
+    end
+
+    subgraph marts["Marts"]
+        model_running_analytics_mart_drift_trend["mart_drift_trend"]
+        model_running_analytics_mart_efficiency_by_temp_band["mart_efficiency_by_temp_band"]
+        model_running_analytics_mart_efficiency_trend["mart_efficiency_trend"]
+        model_running_analytics_mart_run_drift["mart_run_drift"]
+        model_running_analytics_mart_run_quality["mart_run_quality"]
+        model_running_analytics_mart_weekly_training["mart_weekly_training"]
+    end
+
+    model_running_analytics_fct_runs --> model_running_analytics_int_run_efficiency
+    model_running_analytics_int_run_drift_halves --> model_running_analytics_mart_run_drift
+    model_running_analytics_int_run_drift_halves --> model_running_analytics_mart_run_quality
+    model_running_analytics_int_run_efficiency --> model_running_analytics_int_run_drift_halves
+    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_efficiency_by_temp_band
+    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_efficiency_trend
+    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_run_drift
+    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_run_quality
+    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_weekly_training
+    model_running_analytics_int_run_stream_samples --> model_running_analytics_int_run_drift_halves
+    model_running_analytics_int_runs_with_weather --> model_running_analytics_fct_runs
+    model_running_analytics_mart_run_drift --> model_running_analytics_mart_drift_trend
+    model_running_analytics_mart_weekly_training --> model_running_analytics_mart_efficiency_trend
+    model_running_analytics_stg_strava__activities --> model_running_analytics_int_runs_with_weather
+    model_running_analytics_stg_weather__hourly --> model_running_analytics_int_runs_with_weather
+    seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_by_temp_band
+    seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_trend
+    seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
+    source_running_analytics_raw_strava_activities --> model_running_analytics_stg_strava__activities
+    source_running_analytics_raw_strava_activity_coordinates --> model_running_analytics_stg_strava__activities
+    source_running_analytics_raw_strava_streams --> model_running_analytics_int_run_drift_halves
+    source_running_analytics_raw_strava_streams --> model_running_analytics_int_run_stream_samples
+    source_running_analytics_raw_weather_hourly --> model_running_analytics_stg_weather__hourly
+```
+<!-- dbt-dag:end -->
 
 The dbt project lives in `dbt/` (decision D4) and is driven entirely
 through the Make targets above; `dbt/profiles.yml` is auto-copied from
@@ -349,5 +417,6 @@ exactly what data would populate it.
 * The history is **short** (April 2026 onward): weekly sufficiency and
   rolling medians work, but long-horizon trend claims need more months
   of data.
-* The **dashboard screenshots / dbt lineage image** in `images/` are
-  still pending capture now that the marts are populated.
+* The **dashboard screenshots** in `images/` are still pending capture
+  now that the marts are populated. (dbt lineage is rendered directly
+  in this README via `make dbt-dag`.)
