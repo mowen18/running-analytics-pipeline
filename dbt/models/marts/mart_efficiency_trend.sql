@@ -55,7 +55,4 @@ left join rolling using (week_start_date)
 -- when the week has no weather-matched valid runs (missing, never a
 -- default band).
 left join {{ ref('temperature_bands') }} bands
-    on (bands.min_temperature_f is null
-        or weekly.avg_temperature_f >= bands.min_temperature_f)
-    and (bands.max_temperature_f is null
-        or weekly.avg_temperature_f <= bands.max_temperature_f)
+    on {{ temperature_band_range('weekly.avg_temperature_f') }}

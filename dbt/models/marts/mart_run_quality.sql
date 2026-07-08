@@ -55,6 +55,5 @@ from runs
 left join {{ ref('temperature_bands') }} bands
     on not runs.is_trainer
     and runs.weather_available
-    and (bands.min_temperature_f is null or runs.temperature_f >= bands.min_temperature_f)
-    and (bands.max_temperature_f is null or runs.temperature_f <= bands.max_temperature_f)
+    and {{ temperature_band_range('runs.temperature_f') }}
 left join drift using (activity_id)

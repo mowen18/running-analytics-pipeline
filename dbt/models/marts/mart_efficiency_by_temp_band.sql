@@ -25,10 +25,7 @@ banded as (
     -- missing row).
     left join valid_runs runs
         on runs.weather_available
-        and (bands.min_temperature_f is null
-            or runs.temperature_f >= bands.min_temperature_f)
-        and (bands.max_temperature_f is null
-            or runs.temperature_f <= bands.max_temperature_f)
+        and {{ temperature_band_range('runs.temperature_f') }}
     group by bands.band_key, bands.band_label, bands.sort_order
 
 ),
