@@ -54,7 +54,7 @@ All previously open recommendations are now locked. Any change to these decision
 | D15 | Stream eligibility | Run activity, moving time ≥ **45 min**, heart rate present, within historical window, not already loaded |
 | D16 | Drift analysis window | Drop non-moving samples; exclude first **10 min** (warm-up) and final **5 min** (cooldown); require ≥ **30 min** remaining; split into two equal-duration halves |
 | D17 | Decoupling sign convention | Positive = efficiency declined in second half (documented in README and dbt YAML) |
-| D18 | Orchestration | Makefile + Python CLI. **No Airflow in v1** — the portfolio already demonstrates Airflow elsewhere |
+| D18 | Orchestration | Makefile + Python CLI |
 | D19 | Dashboard constraint | Maximum **3 Streamlit views**; marts only, no raw-table queries, no SQL in app code |
 | D20 | Cross-domain integration | Deferred stretch goal. If pursued, use **Option A: shared integration warehouse** with domain schemas |
 | D21 | MVP boundary | Phases 0–4. Cardiac drift (Phase 5) is Release 1.1, not an MVP requirement |
@@ -85,7 +85,6 @@ All previously open recommendations are now locked. Any change to these decision
 * Mobile application development
 * Replication of standard Strava screens
 * Complex cloud deployment
-* Airflow (see D18)
 
 ---
 
