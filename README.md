@@ -285,8 +285,16 @@ matches the *nearest* observation that actually carries measurements
 matched within 60 minutes of the run's start; training weeks are local
 wall-clock (`week_start_date` = Monday of the local week); metric
 thresholds (the D9 run-validity rules as revised by v1.1, the 45-minute
-long-run definition) are dbt vars, never inline SQL. Every measurement column carries an explicit
-unit suffix, and missing HR/weather stays NULL through every layer.
+long-run definition) are dbt vars, never inline SQL. Layer dependencies
+are directional and machine-checked: marts read core, seeds, and other
+marts (today a single mart-to-mart hop feeds each trend); intermediate
+never reads core. `source()` is a staging-only privilege with one
+documented exception — `raw_strava.streams`, readable from intermediate
+models only, because stream payloads' only useful transformation is a
+grain change. Both rules are enforced by a manifest-based test
+(`tests/test_dbt_layering.py`), not convention. Every measurement column
+carries an explicit unit suffix, and missing HR/weather stays NULL
+through every layer.
 
 **Missing weather is explicit, never zero.** Hours the archive has no data
 for (recent runs fall inside its ~5-day publication delay) are stored as
@@ -375,7 +383,8 @@ are dbt vars: average sample spacing in the window ≤ 3 s, non-moving
 share ≤ 25 %. Every drift candidate that can't be analyzed carries a
 deterministic exclusion reason in `fct_drift_candidates`; drift trend
 weeks below the D12 run count are flagged `is_sufficient = false` and
-hidden by the dashboard, never deleted.
+excluded from trend lines, but stay visible in every table — never
+deleted.
 
 ## Dashboard
 
@@ -383,13 +392,16 @@ hidden by the dashboard, never deleted.
 **Aerobic Efficiency** (weekly + 28-day rolling trend, temperature-band
 comparison), **Weekly Training** (mileage, moving time, run counts), and
 **Cardiac Drift** (run-level decoupling with the rolling trend). The app
-is deliberately thin: it reads **only the `analytics` schema** — a rule
-enforced by an allow-list in the code and a test that fails if any other
-schema is ever named — and contains no business logic; every metric,
-threshold, and flag is computed and tested in dbt. Sample counts appear
-beside every statistic, insufficient weeks are flagged and excluded from
-trend lines but never hidden from tables, and each empty view explains
-exactly what data would populate it.
+is deliberately thin: it reads **only the six mart tables** — enforced
+by an explicit table-level allow-list in the app code plus a test that
+pins the list to exactly the six marts and refuses any other relation,
+core facts included (core and marts share the `analytics` schema, so a
+schema check alone could not tell them apart) — and contains no business
+logic; every metric, threshold, and flag is computed and tested in dbt.
+Sample counts appear beside every statistic; weeks below the D12 run
+count are flagged `is_sufficient = false` and excluded from trend lines,
+but stay visible in every table; and each empty view explains exactly
+what data would populate it.
 
 ## Data-quality principles
 
