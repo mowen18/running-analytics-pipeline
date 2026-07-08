@@ -20,22 +20,20 @@ the dbt layering — output-invariant).
 ## Architecture
 
 ```text
-Strava API ──────────────┐
-                         │
-Open-Meteo API ──────────┼──> Python ingestion (src/running_pipeline)
-                         │          │
-                         │          v
-                         │   PostgreSQL container
-                         │   running_analytics_db (port 5433)
-                         │          │
-                         │          v
-                         │    dbt transformations (dbt/)
-                         │          │
-                         │          v
-                         └────> Analytics marts
-                                    │
-                                    v
-                              Streamlit app (app/)
+Strava API ──────┐
+                 ├──> Python ingestion (src/running_pipeline)
+Open-Meteo API ──┘             │
+                               v
+                    PostgreSQL container
+                    running_analytics_db (port 5433)
+                               │
+                               v
+                    dbt transformations (dbt/)
+                    staging → intermediate → core → marts
+                               │
+                               v
+                    Streamlit app (app/)
+                    (reads marts only, D19)
 ```
 
 ## Prerequisites
