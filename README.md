@@ -210,13 +210,13 @@ flowchart LR
     end
 
     subgraph intermediate["Intermediate"]
-        model_running_analytics_int_run_drift_halves["int_run_drift_halves"]
         model_running_analytics_int_run_efficiency["int_run_efficiency"]
         model_running_analytics_int_run_stream_samples["int_run_stream_samples"]
         model_running_analytics_int_runs_with_weather["int_runs_with_weather"]
     end
 
     subgraph core["Core"]
+        model_running_analytics_fct_drift_candidates["fct_drift_candidates"]
         model_running_analytics_fct_runs["fct_runs"]
     end
 
@@ -229,17 +229,17 @@ flowchart LR
         model_running_analytics_mart_weekly_training["mart_weekly_training"]
     end
 
-    model_running_analytics_fct_runs --> model_running_analytics_int_run_efficiency
-    model_running_analytics_int_run_drift_halves --> model_running_analytics_mart_run_drift
-    model_running_analytics_int_run_drift_halves --> model_running_analytics_mart_run_quality
-    model_running_analytics_int_run_efficiency --> model_running_analytics_int_run_drift_halves
-    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_efficiency_by_temp_band
-    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_efficiency_trend
-    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_run_drift
-    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_run_quality
-    model_running_analytics_int_run_efficiency --> model_running_analytics_mart_weekly_training
-    model_running_analytics_int_run_stream_samples --> model_running_analytics_int_run_drift_halves
-    model_running_analytics_int_runs_with_weather --> model_running_analytics_fct_runs
+    model_running_analytics_fct_drift_candidates --> model_running_analytics_mart_run_drift
+    model_running_analytics_fct_drift_candidates --> model_running_analytics_mart_run_quality
+    model_running_analytics_fct_runs --> model_running_analytics_mart_efficiency_by_temp_band
+    model_running_analytics_fct_runs --> model_running_analytics_mart_efficiency_trend
+    model_running_analytics_fct_runs --> model_running_analytics_mart_run_drift
+    model_running_analytics_fct_runs --> model_running_analytics_mart_run_quality
+    model_running_analytics_fct_runs --> model_running_analytics_mart_weekly_training
+    model_running_analytics_int_run_efficiency --> model_running_analytics_fct_drift_candidates
+    model_running_analytics_int_run_efficiency --> model_running_analytics_fct_runs
+    model_running_analytics_int_run_stream_samples --> model_running_analytics_fct_drift_candidates
+    model_running_analytics_int_runs_with_weather --> model_running_analytics_int_run_efficiency
     model_running_analytics_mart_run_drift --> model_running_analytics_mart_drift_trend
     model_running_analytics_mart_weekly_training --> model_running_analytics_mart_efficiency_trend
     model_running_analytics_stg_strava__activities --> model_running_analytics_int_runs_with_weather
@@ -249,7 +249,7 @@ flowchart LR
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
     source_running_analytics_raw_strava_activities --> model_running_analytics_stg_strava__activities
     source_running_analytics_raw_strava_activity_coordinates --> model_running_analytics_stg_strava__activities
-    source_running_analytics_raw_strava_streams --> model_running_analytics_int_run_drift_halves
+    source_running_analytics_raw_strava_streams --> model_running_analytics_fct_drift_candidates
     source_running_analytics_raw_strava_streams --> model_running_analytics_int_run_stream_samples
     source_running_analytics_raw_weather_hourly --> model_running_analytics_stg_weather__hourly
 ```
@@ -265,14 +265,15 @@ same `.env` contract as the Python pipeline — no separate credentials.
 | Staging | `stg_strava__activities` | `staging` | one row per activity, any sport type |
 | Staging | `stg_weather__hourly` | `staging` | one row per D7 cell + UTC hour, metric & imperial units |
 | Intermediate | `int_runs_with_weather` | `intermediate` | one row per running activity + nearest qualifying observation |
-| Intermediate | `int_run_efficiency` | `intermediate` | one row per running activity + efficiency and eligibility verdict |
-| Core | `fct_runs` | `analytics` | one row per running activity, derived measures + eligibility flags |
+| Intermediate | `int_run_efficiency` | `intermediate` | one row per running activity — derived measures + efficiency and validity verdict (feeds `fct_runs`) |
+| Core | `fct_runs` | `analytics` | one row per running activity — the mart-facing contract: measures, weather, validity + efficiency |
 | Mart | `mart_weekly_training` | `analytics` | one row per training week |
 | Mart | `mart_efficiency_trend` | `analytics` | one row per week + 28-day rolling median |
 | Mart | `mart_efficiency_by_temp_band` | `analytics` | one row per D14 temp band (+ explicit weather-unavailable row) |
+| Mart | `mart_run_quality` | `analytics` | one row per running activity + quality verdicts (validity, band, drift) |
 | Seed | `temperature_bands` | `analytics` | the D14 bands, defined once, joined by range everywhere |
 | Intermediate | `int_run_stream_samples` | `intermediate` | one row per activity + aligned stream sample |
-| Intermediate | `int_run_drift_halves` | `intermediate` | one row per drift candidate + halves and exclusion verdict |
+| Core | `fct_drift_candidates` | `analytics` | one row per drift candidate + halves and exclusion verdict |
 | Mart | `mart_run_drift` | `analytics` | one row per analyzed drift run |
 | Mart | `mart_drift_trend` | `analytics` | one row per week of drift runs + rolling median |
 
@@ -326,7 +327,8 @@ no intensity ceiling and no race/workout exclusion:
 
 Invalid runs are never silently dropped: `int_run_efficiency` gives
 every excluded run a human-readable `exclusion_reason` (the first failing
-rule in a documented priority order).
+rule in a documented priority order), carried through `fct_runs` and
+`mart_run_quality`.
 
 **Weekly statistics (D11, D12)** — the weekly summary statistic is the
 **median** efficiency across valid runs (mean shown as secondary);
@@ -370,7 +372,7 @@ signal of interest — never proof of a fitness change on its own.
 Coverage and pause thresholds (the two checks D16 leaves unquantified)
 are dbt vars: average sample spacing in the window ≤ 3 s, non-moving
 share ≤ 25 %. Every drift candidate that can't be analyzed carries a
-deterministic exclusion reason in `int_run_drift_halves`; drift trend
+deterministic exclusion reason in `fct_drift_candidates`; drift trend
 weeks below the D12 run count are flagged `is_sufficient = false` and
 hidden by the dashboard, never deleted.
 

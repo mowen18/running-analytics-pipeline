@@ -11,8 +11,12 @@
   4:00–20:00, ≥15 min). easy_run_eligible / easy_hr_max and the
   "qualifying easy runs" vocabulary are gone; marts expose
   valid_run_count etc. Drift candidacy is ≥45 min moving + HR present
-- Revision v1.2 (layering correction: staging → intermediate → core →
-  marts, output-invariant) is approved; implementation in progress.
+- Revision v1.2 is implemented: layering is staging → intermediate →
+  core → marts. int_run_efficiency computes measures + validity /
+  efficiency and feeds fct_runs (37 cols; original 34 unchanged); marts
+  read core/seeds/marts only; int_run_drift_halves is now core
+  fct_drift_candidates (analytics schema). is_valid := exclusion_reason
+  is null; layering enforced by tests/test_dbt_layering.py.
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
