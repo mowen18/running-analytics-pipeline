@@ -1,8 +1,12 @@
-"""dbt DAG generator tests: manifest → graph extraction and deterministic
-Mermaid rendering. Pure unit tests — no dbt subprocess, no database."""
+"""dbt DAG generator tests: manifest → graph extraction, deterministic
+Mermaid rendering, and idempotent README embedding. Pure unit tests —
+no dbt subprocess, no database."""
 
 import json
+import shutil
 from pathlib import Path
+
+import pytest
 
 from running_pipeline import dbt_dag
 
@@ -37,6 +41,21 @@ flowchart LR
     seed_demo_bands --> model_demo_int_orders
     source_demo_raw_a_orders --> model_demo_stg_orders
     source_demo_raw_b_hourly --> model_demo_mart_orders
+"""
+
+
+SAMPLE_README = """\
+# Demo project
+
+Intro prose above the anchor.
+
+## Warehouse models (dbt)
+
+The dbt project lives in `dbt/` and is driven through make.
+
+## Next section
+
+Prose after the anchor section.
 """
 
 
@@ -94,3 +113,76 @@ def test_render_mermaid_omits_empty_groups():
         "subgraph intermediate",
         "subgraph marts",
     ]
+
+
+def test_update_readme_inserts_after_heading():
+    result = dbt_dag.update_readme_text(SAMPLE_README, EXPECTED_MERMAID)
+
+    expected_block = (
+        f"## Warehouse models (dbt)\n\n{dbt_dag.MARKER_START}\n"
+        f"```mermaid\n{EXPECTED_MERMAID}```\n{dbt_dag.MARKER_END}\n\n"
+        "The dbt project lives in `dbt/` and is driven through make.\n"
+    )
+    assert expected_block in result
+    for line in SAMPLE_README.splitlines():
+        assert line in result  # every original line survives the insert
+    assert result.endswith("Prose after the anchor section.\n")
+    assert not result.endswith("\n\n")
+
+
+def test_update_readme_replace_is_byte_idempotent():
+    first = dbt_dag.update_readme_text(SAMPLE_README, EXPECTED_MERMAID)
+
+    assert dbt_dag.update_readme_text(first, EXPECTED_MERMAID) == first
+
+    changed = dbt_dag.update_readme_text(first, "flowchart LR\n")
+    assert "```mermaid\nflowchart LR\n```" in changed
+    prefix = first[: first.find(dbt_dag.MARKER_START)]
+    suffix = first[first.find(dbt_dag.MARKER_END) + len(dbt_dag.MARKER_END) :]
+    assert changed.startswith(prefix)  # text outside the markers is untouched
+    assert changed.endswith(suffix)
+
+
+def test_update_readme_missing_heading_errors():
+    with pytest.raises(ValueError, match="Warehouse models"):
+        dbt_dag.update_readme_text("# Some other README\n\nNo anchor here.\n", "flowchart LR\n")
+
+
+def test_update_readme_unbalanced_markers_errors():
+    broken = SAMPLE_README + f"\n{dbt_dag.MARKER_START}\n"
+    with pytest.raises(ValueError, match="unbalanced"):
+        dbt_dag.update_readme_text(broken, "flowchart LR\n")
+
+
+def test_main_updates_readme_idempotently(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    shutil.copy(FIXTURES / "dbt_manifest.json", manifest)
+    readme = tmp_path / "README.md"
+    readme.write_text(SAMPLE_README)
+    argv = ["--manifest", str(manifest), "--readme", str(readme), "--update-readme"]
+
+    assert dbt_dag.main(argv) == 0
+    first = readme.read_bytes()
+    assert dbt_dag.MARKER_START.encode() in first
+
+    assert dbt_dag.main(argv) == 0
+    assert readme.read_bytes() == first
+
+
+def test_main_prints_mermaid_without_flag(tmp_path, capsys):
+    readme = tmp_path / "README.md"
+    readme.write_text(SAMPLE_README)
+
+    exit_code = dbt_dag.main(
+        ["--manifest", str(FIXTURES / "dbt_manifest.json"), "--readme", str(readme)]
+    )
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == EXPECTED_MERMAID
+    assert readme.read_text() == SAMPLE_README  # README untouched without the flag
+
+
+def test_main_missing_manifest_errors(tmp_path):
+    missing = tmp_path / "nope" / "manifest.json"
+    with pytest.raises(SystemExit, match=r"dbt manifest not found at .* `make dbt-dag`"):
+        dbt_dag.main(["--manifest", str(missing)])

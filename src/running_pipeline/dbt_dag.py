@@ -9,7 +9,11 @@ the analytics schema and would collapse into one group under a schema
 grouping. Output is fully sorted so regeneration is diff-stable.
 """
 
+import argparse
+import json
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 MARKER_START = "<!-- dbt-dag:start -->"
 MARKER_END = "<!-- dbt-dag:end -->"
@@ -115,3 +119,87 @@ def render_mermaid(nodes: list[DagNode], edges: list[tuple[str, str]]) -> str:
     lines.append("")
     lines += [f"    {_sanitize(parent)} --> {_sanitize(child)}" for parent, child in edges]
     return "\n".join(lines) + "\n"
+
+
+def update_readme_text(readme_text: str, mermaid: str) -> str:
+    """Return the README text with the Mermaid block embedded.
+
+    Replaces whatever sits between the dbt-dag markers; on first run
+    (no markers yet) inserts the block right after the anchor heading.
+    Pure text transform — same input always yields byte-identical output.
+    """
+    block = f"{MARKER_START}\n```mermaid\n{mermaid}```\n{MARKER_END}"
+    start = readme_text.find(MARKER_START)
+    end = readme_text.find(MARKER_END)
+
+    if start != -1 and end > start:
+        return readme_text[:start] + block + readme_text[end + len(MARKER_END) :]
+    if start != -1 or end != -1:
+        raise ValueError(
+            f"README.md has unbalanced dbt-dag markers — restore both `{MARKER_START}` "
+            f"and `{MARKER_END}` (in that order) or delete both and re-run `make dbt-dag`"
+        )
+
+    lines = readme_text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.rstrip("\n") == ANCHOR_HEADING:
+            lines.insert(i + 1, f"\n{block}\n")
+            return "".join(lines)
+    raise ValueError(
+        f'README.md has no dbt-dag markers and no "{ANCHOR_HEADING}" heading — add '
+        f"`{MARKER_START}` / `{MARKER_END}` where the diagram belongs, "
+        "then re-run `make dbt-dag`"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m running_pipeline.dbt_dag",
+        description="Render the dbt DAG as Mermaid; optionally embed it in README.md.",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("dbt/target/manifest.json"),
+        help="path to the dbt manifest (default: dbt/target/manifest.json)",
+    )
+    parser.add_argument(
+        "--readme",
+        type=Path,
+        default=Path("README.md"),
+        help="README to update (default: README.md)",
+    )
+    parser.add_argument(
+        "--update-readme",
+        action="store_true",
+        help="embed between dbt-dag markers instead of printing to stdout",
+    )
+    args = parser.parse_args(argv)
+
+    if not args.manifest.is_file():
+        raise SystemExit(
+            f"dbt manifest not found at {args.manifest} — generate it with `make dbt-dag`"
+        )
+    mermaid = render_mermaid(*build_graph(json.loads(args.manifest.read_text())))
+
+    if not args.update_readme:
+        sys.stdout.write(mermaid)
+        return 0
+
+    if not args.readme.is_file():
+        raise SystemExit(f"README not found at {args.readme}")
+    old = args.readme.read_text()
+    try:
+        new = update_readme_text(old, mermaid)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if new != old:
+        args.readme.write_text(new)
+        print(f"{args.readme}: dbt DAG updated")
+    else:
+        print(f"{args.readme}: dbt DAG already up to date")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
