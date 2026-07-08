@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"
+  },
+  "nodes": {
+    "model.demo.stg_orders": {
+      "resource_type": "model",
+      "fqn": ["demo", "staging", "stg_orders"]
+    },
+    "model.demo.int_orders": {
+      "resource_type": "model",
+      "fqn": ["demo", "intermediate", "int_orders"]
+    },
+    "model.demo.mart_orders": {
+      "resource_type": "model",
+      "fqn": ["demo", "marts", "mart_orders"]
+    },
+    "seed.demo.bands": {
+      "resource_type": "seed",
+      "fqn": ["demo", "bands"]
+    },
+    "test.demo.not_null_stg_orders_id.abc123": {
+      "resource_type": "test",
+      "fqn": ["demo", "staging", "not_null_stg_orders_id"]
+    }
+  },
+  "sources": {
+    "source.demo.raw_a.orders": {
+      "resource_type": "source",
+      "fqn": ["demo", "sources", "raw_a", "orders"]
+    },
+    "source.demo.raw_b.hourly": {
+      "resource_type": "source",
+      "fqn": ["demo", "sources", "raw_b", "hourly"]
+    }
+  },
+  "parent_map": {
+    "model.demo.stg_orders": ["source.demo.raw_a.orders"],
+    "model.demo.int_orders": ["model.demo.stg_orders", "seed.demo.bands"],
+    "model.demo.mart_orders": ["model.demo.int_orders", "source.demo.raw_b.hourly"],
+    "test.demo.not_null_stg_orders_id.abc123": ["model.demo.stg_orders"],
+    "seed.demo.bands": [],
+    "source.demo.raw_a.orders": [],
+    "source.demo.raw_b.hourly": []
+  }
+}
