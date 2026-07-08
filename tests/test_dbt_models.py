@@ -499,3 +499,31 @@ def test_dbt_tests_fail_on_known_invalid_fixtures(db):
     assert result.returncode != 0, "dbt build should fail on invalid fixtures"
     assert "assert_moving_time_not_longer_than_elapsed" in result.stdout
     assert "accepted_range_stg_weather__hourly_relative_humidity_pct" in result.stdout
+
+
+@pytest.mark.integration
+def test_relationships_test_fails_on_orphan_drift_candidate(db):
+    # The fct_drift_candidates -> fct_runs relationships test was proven
+    # red-first once (commit 6e478af); this re-proves it on every run.
+    # Both models descend from int_run_efficiency, so no raw fixture can
+    # produce an orphan — it must be injected into the built table.
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    # Insert AFTER the build and test WITHOUT rebuilding: a rebuild
+    # would erase the orphan and a green run would prove nothing.
+    db.execute(
+        "INSERT INTO analytics.fct_drift_candidates (activity_id) VALUES (999999999)"
+    )
+    db.commit()
+
+    selector = "relationships_fct_drift_candidates_activity_id__activity_id__ref_fct_runs_"
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode != 0, "relationships test should fail on an orphan candidate"
+    assert selector in result.stdout
+
+    db.execute("DELETE FROM analytics.fct_drift_candidates WHERE activity_id = 999999999")
+    db.commit()
+
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode == 0, f"relationships test still failing:\n{result.stdout}"
