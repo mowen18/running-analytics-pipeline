@@ -2,15 +2,16 @@
   The run-level quality view: one row per running activity with its
   efficiency value, validity verdict, weather context, and drift
   context. This is the mart that lets the dashboard answer "why didn't
-  run X count?" without reaching into intermediate models (D19:
-  marts only). Efficiency is computed for EVERY heart-rate-carrying run
+  run X count?" while reading only the core layer (Revision v1.2:
+  marts reference core, seeds, and other marts only). Efficiency is
+  computed for EVERY heart-rate-carrying run
   while the trend/band marts aggregate runs with valid HR data (D9
   revised v1.1); both facts are visible here side by side.
 #}
 
 with runs as (
 
-    select * from {{ ref('int_run_efficiency') }}
+    select * from {{ ref('fct_runs') }}
 
 ),
 
@@ -20,7 +21,7 @@ drift as (
         activity_id,
         decoupling_pct,
         exclusion_reason as drift_exclusion_reason
-    from {{ ref('int_run_drift_halves') }}
+    from {{ ref('fct_drift_candidates') }}
 
 )
 

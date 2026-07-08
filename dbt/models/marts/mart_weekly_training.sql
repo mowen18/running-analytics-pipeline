@@ -1,6 +1,6 @@
 with runs as (
 
-    select * from {{ ref('int_run_efficiency') }}
+    select * from {{ ref('fct_runs') }}
 
 ),
 

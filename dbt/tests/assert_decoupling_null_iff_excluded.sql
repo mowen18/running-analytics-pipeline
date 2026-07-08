@@ -3,5 +3,5 @@
 -- reason it doesn't (acceptance criterion 4 — never both, never
 -- neither).
 select activity_id, decoupling_pct, exclusion_reason
-from {{ ref('int_run_drift_halves') }}
+from {{ ref('fct_drift_candidates') }}
 where (decoupling_pct is null) != (exclusion_reason is not null)

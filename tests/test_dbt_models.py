@@ -449,7 +449,7 @@ def test_drift_decoupling_formula_and_analysis_window(db):
         row[0]: (row[1], row[2])
         for row in db.execute(
             "SELECT activity_id, decoupling_pct, exclusion_reason "
-            "FROM intermediate.int_run_drift_halves"
+            "FROM analytics.fct_drift_candidates"
         ).fetchall()
     }
     assert set(halves) == {1, 2, 3, 4, 5, 6, 7}  # 8 (short) and 9 (no HR) are not candidates

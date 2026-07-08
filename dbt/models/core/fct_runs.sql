@@ -1,35 +1,10 @@
+-- Core projection of int_run_efficiency (Revision v1.2): the mart- and
+-- app-facing run-level contract. Columns 1–34 are the pre-v1.2 fct_runs
+-- surface, unchanged in order and value; 35–37 expose the analytic
+-- columns so marts read core only.
 with runs as (
 
-    select * from {{ ref('int_runs_with_weather') }}
-
-),
-
-derived as (
-
-    select
-        *,
-        round(distance_m / 1609.344, 2) as distance_mi,
-        round(moving_time_s / 60.0, 1)  as moving_time_min,
-        -- Every division is guarded: a zero denominator yields NULL,
-        -- never an error and never a fake zero.
-        case
-            when distance_m > 0 and moving_time_s > 0
-                then round((moving_time_s / 60.0) / (distance_m / 1609.344), 2)
-        end                             as pace_min_per_mi,
-        case
-            when moving_time_s > 0
-                then round(distance_m / (moving_time_s / 60.0), 1)
-        end                             as speed_m_per_min,
-        case
-            when distance_m > 0
-                then round(elevation_gain_m / (distance_m / 1609.344), 1)
-        end                             as elevation_gain_m_per_mi,
-        -- Training calendar is local wall-clock: a 9 PM Tuesday run
-        -- belongs to Tuesday even when it is Wednesday in UTC.
-        date_trunc('week', start_date_local)::date as week_start_date,
-        extract(month from start_date_local)::integer as start_month,
-        extract(year from start_date_local)::integer  as start_year
-    from runs
+    select * from {{ ref('int_run_efficiency') }}
 
 )
 
@@ -65,7 +40,10 @@ select
     wind_speed_kph,
     wind_speed_mph,
     weather_match_minutes,
-    weather_matched as weather_available,
-    moving_time_min >= {{ var('long_run_min_moving_minutes') }} as long_run_eligible,
-    fetched_at
-from derived
+    weather_available,
+    long_run_eligible,
+    fetched_at,
+    aerobic_efficiency_m_per_heartbeat,
+    is_valid,
+    exclusion_reason
+from runs

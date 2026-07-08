@@ -1,9 +1,9 @@
 with analyzed as (
 
     -- Successfully analyzed candidates only; the full candidate set
-    -- with exclusion reasons stays queryable in int_run_drift_halves,
+    -- with exclusion reasons stays queryable in fct_drift_candidates,
     -- and the dashboard's data-quality panel reads reasons from there.
-    select * from {{ ref('int_run_drift_halves') }}
+    select * from {{ ref('fct_drift_candidates') }}
     where exclusion_reason is null
 
 ),
@@ -16,7 +16,7 @@ context as (
         distance_mi,
         temperature_f,
         weather_available
-    from {{ ref('int_run_efficiency') }}
+    from {{ ref('fct_runs') }}
 
 )
 

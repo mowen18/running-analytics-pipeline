@@ -4,11 +4,13 @@ models:
   - name: fct_runs
     description: >
       One row per Strava running activity (Run/TrailRun/VirtualRun),
-      indoor and outdoor alike, with derived training measures, weather
-      context, and the duration-based long-run flag. Missing heart rate
-      and missing weather remain NULL end to end — distinguishable from
-      zero. Run validity for the efficiency aggregates (D9 revised
-      v1.1) is derived downstream in int_run_efficiency, not here.
+      indoor and outdoor alike — the mart- and app-facing core contract
+      (Revision v1.2): an explicit-column projection of
+      int_run_efficiency carrying the derived training measures, weather
+      context, the duration-based long-run flag, and the analytic
+      columns (aerobic efficiency, is_valid, exclusion_reason) computed
+      upstream, so marts read core only. Missing heart rate and missing
+      weather remain NULL end to end — distinguishable from zero.
     columns:
       - name: activity_id
         description: Strava activity id (grain of the table).
@@ -62,3 +64,60 @@ models:
       - name: fetched_at
         description: Ingestion timestamp carried from the raw layer.
         tests: [not_null]
+      - name: aerobic_efficiency_m_per_heartbeat
+        description: >
+          D10 efficiency (meters per heartbeat), computed in
+          int_run_efficiency and projected here unchanged; the
+          accepted_range test lives at the computation site.
+      - name: is_valid
+        description: >
+          The run counts toward every efficiency aggregate (D9 revised
+          v1.1). Defined upstream as (exclusion_reason is null).
+        tests: [not_null]
+      - name: exclusion_reason
+        description: >
+          NULL when valid; otherwise the first failing validity rule.
+          The accepted_values test lives at the computation site
+          (int_run_efficiency) so the var-rendered strings are
+          maintained in one file.
+
+  - name: fct_drift_candidates
+    description: >
+      One row per drift CANDIDATE (HR-carrying run >= the 45-minute
+      long-run threshold, D15 revised v1.1 — intensity is not a
+      prerequisite), materialized in core since Revision v1.2 (formerly
+      intermediate.int_run_drift_halves): the D16 analysis window
+      applied in the plan's order (drop non-moving samples, trim the
+      first 10 and last 5 minutes, require >= 30 minutes remaining,
+      split into two equal-duration halves), per-half
+      HR/speed/efficiency, and the decoupling percentage. Candidates
+      that cannot be analyzed carry the FIRST failing check as a
+      deterministic exclusion_reason, in dependency order: stream
+      availability -> required arrays -> window length -> pauses ->
+      coverage. D17 sign convention: POSITIVE decoupling = efficiency
+      declined in the second half; near zero = stable; negative = the
+      second half improved.
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per drift candidate).
+        tests: [unique, not_null]
+      - name: window_duration_s
+        description: Analysis-window length after trimming; NULL when streams are absent.
+      - name: paused_fraction
+        description: Non-moving share of window samples (pause check input).
+      - name: avg_sample_gap_s
+        description: window_duration_s / valid samples (coverage check input).
+      - name: first_half_efficiency
+        description: first_half_speed_m_per_min / first_half_hr_bpm (D16).
+      - name: second_half_efficiency
+        description: second_half_speed_m_per_min / second_half_hr_bpm (D16).
+      - name: decoupling_pct
+        description: >
+          (first_half_efficiency - second_half_efficiency) /
+          first_half_efficiency * 100 (D17: positive = second-half
+          decline). NULL exactly when exclusion_reason is set.
+      - name: exclusion_reason
+        description: >
+          NULL when the run was analyzed; otherwise the first failing
+          D16 check, with thresholds rendered from the same dbt vars
+          the checks use.

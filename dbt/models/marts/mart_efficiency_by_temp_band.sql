@@ -1,6 +1,6 @@
 with valid_runs as (
 
-    select * from {{ ref('int_run_efficiency') }}
+    select * from {{ ref('fct_runs') }}
     where is_valid
 
 ),

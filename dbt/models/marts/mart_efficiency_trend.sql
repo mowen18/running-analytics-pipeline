@@ -9,7 +9,7 @@ valid_runs as (
     select
         start_date_local::date as run_date,
         aerobic_efficiency_m_per_heartbeat
-    from {{ ref('int_run_efficiency') }}
+    from {{ ref('fct_runs') }}
     where is_valid
 
 ),
