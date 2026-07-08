@@ -275,6 +275,7 @@ same `.env` contract as the Python pipeline — no separate credentials.
 | Mart | `mart_run_quality` | `analytics` | one row per running activity + quality verdicts (validity, band, drift) |
 | Seed | `temperature_bands` | `analytics` | the D14 bands, defined once, joined by range everywhere |
 | Intermediate | `int_run_stream_samples` | `intermediate` | one row per activity + aligned stream sample |
+| Intermediate | `int_run_stream_state` | `intermediate` | one row per stream-fetch attempt: status + required-array presence |
 | Core | `fct_drift_candidates` | `analytics` | one row per drift candidate + halves and exclusion verdict |
 | Mart | `mart_run_drift` | `analytics` | one row per analyzed drift run |
 | Mart | `mart_drift_trend` | `analytics` | one row per week of drift runs + rolling median |
