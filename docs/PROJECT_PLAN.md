@@ -735,3 +735,35 @@ stream state from the new activity-grain intermediate
 keeping output byte-identical. The layering guard encodes the
 exception per-layer and per-source-table, and was proven to fail on
 the core read before the fix.
+
+## Revision v1.3 — 2026-07-08 — Trend mart columns: vars change behavior, never interface
+
+**Rationale:** `mart_efficiency_trend` and `mart_drift_trend` rendered
+`trend_window_days` into their rolling-column NAMES
+(`rolling_28d_median_efficiency` and siblings under the default 28).
+That couples the marts' schema contract to configuration: overriding
+the var via `--vars` silently renames the columns, breaking marts.yml
+(column docs and not_null tests) and the dashboard's column
+references. A dbt var may change the VALUES a contract carries, never
+the shape of the contract itself.
+
+**Revised decision (amends column naming only — the D13 28-day default
+and the window mechanics are unchanged):** the rolling columns carry
+static names — `rolling_median_efficiency` / `rolling_valid_run_count`
+in `mart_efficiency_trend`, and `rolling_median_decoupling_pct` /
+`rolling_drift_run_count` in `mart_drift_trend`. The window length
+remains the `trend_window_days` var and is referenced in the columns'
+YAML descriptions. Output-invariance requirement: under default vars,
+mart values are identical before and after; only the four column names
+differ.
+
+**Also in this revision (pure refactor, output-invariant):** the D14
+temperature-band range predicate, previously hand-written in three
+marts (`mart_efficiency_by_temp_band`, `mart_run_quality`,
+`mart_efficiency_trend`), is rendered by a single macro,
+`temperature_band_range(temperature_expression, bands_alias='bands')`.
+The seed stays the sole definition of the band BOUNDS (D14); the macro
+centralizes only the null-tolerant range-predicate rendering.
+Call-site-specific conditions (`weather_available`, `not is_trainer`)
+stay at the call sites. Built mart data is byte-identical before and
+after; compiled SQL differs only in whitespace.

@@ -1,8 +1,10 @@
 with analyzed as (
 
     -- Successfully analyzed candidates only; the full candidate set
-    -- with exclusion reasons stays queryable in fct_drift_candidates,
-    -- and the dashboard's data-quality panel reads reasons from there.
+    -- with exclusion reasons stays queryable in fct_drift_candidates
+    -- and reaches the dashboard as mart_run_quality's
+    -- drift_exclusion_reason (D19 allow-list: the app reads marts
+    -- only, never core relations).
     select * from {{ ref('fct_drift_candidates') }}
     where exclusion_reason is null
 

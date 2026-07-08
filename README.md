@@ -267,7 +267,7 @@ inventory but deliberately not modeled downstream.
 |---|---|---|---|
 | Staging | `stg_strava__activities` | `staging` | one row per activity, any sport type |
 | Staging | `stg_weather__hourly` | `staging` | one row per D7 cell + UTC hour, metric & imperial units |
-| Intermediate | `int_run_efficiency` | `intermediate` | one row per running activity — derived measures + efficiency and validity verdict; carries the weather context through to `fct_runs`, its only parent |
+| Intermediate | `int_run_efficiency` | `intermediate` | one row per running activity — derived measures, weather context, efficiency and validity verdict; the sole parent of `fct_runs`, and also feeds `fct_drift_candidates` |
 | Intermediate | `int_run_stream_samples` | `intermediate` | one row per activity + aligned stream sample |
 | Intermediate | `int_run_stream_state` | `intermediate` | one row per stream-fetch attempt: status + required-array presence |
 | Intermediate | `int_runs_with_weather` | `intermediate` | one row per running activity + nearest qualifying observation |
