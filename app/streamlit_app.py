@@ -1,5 +1,5 @@
 """Thin presentation layer: exactly three views (D19), reading ONLY the
-analytics schema (marts + fct_runs). No business logic here — every
+six mart tables. No business logic here — every
 metric, threshold, flag, and exclusion is computed in dbt; this file
 selects, charts, and explains. Sample counts and data sufficiency are
 always visible, missing data is explained rather than hidden, and all
@@ -50,11 +50,11 @@ def week_axis(week_dates) -> alt.Axis:
     return alt.Axis(format="%b %d", labelAngle=0, values=values, labelOverlap="greedy")
 
 
-# The app may read exactly these relations, all in the analytics schema.
-# The allow-list is the D19 "marts only" rule made mechanical (and is
-# asserted by tests/test_app.py).
+# The app may read exactly the six marts — nothing else, even in the
+# analytics schema (core facts live there too). The allow-list is the
+# D19 "marts only" rule made mechanical; tests/test_app.py pins its
+# contents and asserts core relations are refused.
 ANALYTICS_TABLES = (
-    "fct_runs",
     "mart_weekly_training",
     "mart_efficiency_trend",
     "mart_efficiency_by_temp_band",
@@ -117,7 +117,9 @@ def zero_rule() -> alt.Chart:
 
 
 def hr_availability_note(runs: pd.DataFrame) -> str:
-    with_hr = int(runs["has_heartrate"].sum()) if not runs.empty else 0
+    # average_hr_bpm presence is what the metrics actually divide by —
+    # mart_run_quality has one row per running activity, same as core.
+    with_hr = int(runs["average_hr_bpm"].notna().sum()) if not runs.empty else 0
     return (
         f"{with_hr} of {len(runs)} recorded runs carry heart-rate data. "
         "Every efficiency and drift metric requires it (D9/D15): runs synced "
@@ -191,7 +193,7 @@ def efficiency_view():
     if sufficient["median_efficiency_m_per_beat"].dropna().empty:
         st.info(
             "No trend to display yet: no week has the required "
-            "2 runs with valid HR data. " + hr_availability_note(load("fct_runs"))
+            "2 runs with valid HR data. " + hr_availability_note(load("mart_run_quality"))
         )
     else:
         axis = week_axis(sufficient["week_start_date"])
@@ -404,7 +406,7 @@ def drift_view():
     if runs.empty:
         st.info(
             "No analyzed drift runs yet. Drift needs runs ≥45 minutes with "
-            "heart-rate streams (D15). " + hr_availability_note(load("fct_runs"))
+            "heart-rate streams (D15). " + hr_availability_note(load("mart_run_quality"))
         )
         return
 

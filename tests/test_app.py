@@ -1,12 +1,16 @@
 """Streamlit app tests.
 
-The marts-only rule (D19) is enforced mechanically: the app source must
-never name a non-analytics schema. The @integration tests drive the real
-app headlessly (streamlit AppTest) against the scratch database — once
-with empty marts (every view must explain itself, not crash) and once
-with the drift fixtures (every view must render its charts).
+The marts-only rule (D19) is enforced mechanically at two levels: the
+app source must never name a non-analytics schema, and the allow-list
+must contain exactly the six marts — core facts share the analytics
+schema, so only a table-level pin can keep them out. The @integration
+tests drive the real app headlessly (streamlit AppTest) against the
+scratch database — once with empty marts (every view must explain
+itself, not crash) and once with the drift fixtures (every view must
+render its charts).
 """
 
+import importlib.util
 import os
 from pathlib import Path
 
@@ -26,6 +30,25 @@ APP_PATH = Path(__file__).resolve().parent.parent / "app" / "streamlit_app.py"
 TEST_DB = "running_analytics_test"
 VIEW_NAMES = ["Aerobic efficiency", "Weekly training", "Cardiac drift"]
 
+# The complete mart layer (dbt/models/marts/) — D19 allows nothing else.
+MART_TABLES = frozenset(
+    {
+        "mart_weekly_training",
+        "mart_efficiency_trend",
+        "mart_efficiency_by_temp_band",
+        "mart_run_quality",
+        "mart_run_drift",
+        "mart_drift_trend",
+    }
+)
+
+
+def load_app_module():
+    spec = importlib.util.spec_from_file_location("streamlit_app", APP_PATH)
+    app = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(app)  # safe: the shell runs only under __main__
+    return app
+
 
 def test_app_reads_only_the_analytics_schema():
     source = APP_PATH.read_text()
@@ -34,17 +57,28 @@ def test_app_reads_only_the_analytics_schema():
     assert 'SELECT * FROM analytics.{table}"' in source  # the single query site
 
 
+def test_allow_list_is_pinned_to_the_six_marts():
+    app = load_app_module()
+    assert set(app.ANALYTICS_TABLES) == MART_TABLES, "the allow-list is marts only (D19)"
+
+
+def test_core_relations_are_refused_even_in_the_analytics_schema():
+    """fct_runs lives in the same Postgres schema as the marts, so a
+    schema-level check would let it through — the table-level guard in
+    load() must refuse it before any connection is opened."""
+    app = load_app_module()
+    with pytest.raises(ValueError, match="not an approved analytics relation"):
+        app.load("fct_runs")
+
+
 def test_decimals_are_coerced_to_float_for_the_browser():
     """Postgres numerics arrive as Decimal; Arrow ships Decimal as
     decimal128, which Vega-Lite reads UNSCALED (0.7838 charted as 7838).
     to_dataframe must coerce to float64 — the regression test for the
     first-real-data chart bug."""
-    import importlib.util
     from decimal import Decimal
 
-    spec = importlib.util.spec_from_file_location("streamlit_app", APP_PATH)
-    app = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(app)  # safe: the shell runs only under __main__
+    app = load_app_module()
 
     df = app.to_dataframe(
         [
