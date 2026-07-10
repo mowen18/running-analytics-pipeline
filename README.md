@@ -299,10 +299,17 @@ grain change. Both rules are enforced by a manifest-based test
 carries an explicit unit suffix, and missing HR/weather stays NULL
 through every layer.
 
-**Missing weather is explicit, never zero.** Hours the archive has no data
-for (recent runs fall inside its ~5-day publication delay) are stored as
-rows with NULL measurements and the original payload preserved; later
-incremental syncs re-request those hours until data appears. A failed
+**Missing weather is explicit, never zero.** Hours the archive genuinely
+has no data for are stored as rows with NULL measurements and the original
+payload preserved; later incremental syncs re-request those hours until
+data appears. That is the rare case, not the normal one: requests pass no
+`models` parameter, so the archive defaults to `best_match`, which serves
+recent dates immediately with preliminary ECMWF IFS fill-in values that
+the same request can later silently replace once ERA5 covers the date. A
+cache-completeness check must know whether the source's answer was final;
+ours treats any non-NULL value as final, so preliminary values are frozen
+until a full re-fetch (`make reconcile-weather`), whose `IS DISTINCT FROM`
+upsert absorbs any revisions. A failed
 request for one location never fails the sync — it is logged, counted in
 `failed_batches`, and retried next run. Exact coordinates are never logged;
 only 2-decimal cell keys appear in logs and stored keys.
@@ -426,8 +433,20 @@ what data would populate it.
   occurred** are only caught by `make reconcile`, not incremental sync.
   (The July 2026 heart-rate re-import was ingested exactly this way:
   old-dated re-uploads are invisible to the incremental window.)
-* Open-Meteo's archive runs **~5 days behind**; recent runs carry
-  explicit NULL weather rows that self-heal on later syncs.
+* Open-Meteo's archive, queried without a `models` parameter, defaults to
+  `best_match` — a per-hour stitch of ERA5 (0.25°, ~5-day delay),
+  ERA5-Land (0.1°), and low-latency ECMWF IFS analysis (9 km). Recent
+  runs therefore get **real preliminary values immediately**, not NULLs,
+  and the response never indicates which dataset served which hour
+  (`fetched_at` relative to the observation date is the only heuristic
+  proxy). Because the cache-completeness check treats any non-NULL value
+  as final, preliminary values are frozen until `make reconcile-weather`
+  re-fetches them (its `IS DISTINCT FROM` upsert absorbs revisions).
+  Under a daily `make all`, nearly every new run's weather is fetched
+  inside the IFS window and frozen, while historical backfill is final
+  reanalysis — two quality regimes in one dataset. All-NULL rows still
+  occur, and still self-heal on later syncs, only when the archive
+  genuinely has no data for an hour — now the rare case.
 * The **dashboard screenshots** in `images/` are still pending capture
   now that the marts are populated. (dbt lineage is rendered directly
   in this README via `make dbt-dag`.)

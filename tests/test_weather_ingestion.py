@@ -113,8 +113,9 @@ def test_cached_hours_with_data_are_skipped():
 
 
 def test_all_null_cached_hours_are_refetched():
-    # A cached row without data is the explicit missing marker (ERA5
-    # delay): keep re-requesting it until the archive fills it.
+    # A cached row without data is the explicit missing marker (the
+    # archive had no data for the hour): keep re-requesting it until
+    # the archive fills it.
     plan = plan_fetches([run_location(1)], {(CELL, HOUR): False}, full=False, gap_days=7)
 
     assert (plan.hours_needed, plan.hours_cached) == (1, 0)
@@ -359,7 +360,7 @@ def test_ineligible_count_covers_indoor_and_coordless_runs_only(db):
 @pytest.mark.integration
 def test_every_run_gets_matching_or_explicitly_missing_start_hour_row(db):
     insert_activity(db, 1, start="2026-06-15T09:47:23Z")
-    insert_activity(db, 2, start="2026-07-04T05:30:00Z")  # inside the archive delay
+    insert_activity(db, 2, start="2026-07-04T05:30:00Z")  # its hour returns all-NULL
     db.commit()
     client = FakeWeatherClient(null_times={"2026-07-04T05:00"})
 

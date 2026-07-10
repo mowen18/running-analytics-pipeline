@@ -13,11 +13,20 @@ no location, and outdoor weather would be wrong for them anyway; they are
 counted explicitly, never silently dropped.
 
 Missing weather is recorded explicitly as rows with NULL measurements
-(never zero). Hours the archive has not published yet (~5-day ERA5 delay)
-land as all-NULL rows and are re-requested by later syncs until data
-appears. A failed batch never fails the sync: it is logged, counted, and
-left for the next run. Coordinates are never logged beyond the 2-dp cell
-key.
+(never zero). Requests pass no `models` parameter, so the archive's
+`best_match` default stitches ERA5 (0.25 deg, ~5-day delay), ERA5-Land
+(0.1 deg), and low-latency ECMWF IFS analysis (9 km) per hour: recent
+dates arrive immediately as real preliminary IFS values, and nothing in
+the response says which dataset served which hour (fetched_at relative
+to the observation date is the only heuristic proxy). All-NULL rows
+occur only when the archive genuinely has no data for an hour — the
+rare case — and are re-requested by later syncs until data appears. A
+cache-completeness check must know whether the source's answer was
+final; ours treats any non-NULL value as final, so preliminary values
+are frozen until a `full` re-fetch, whose IS DISTINCT FROM upsert
+absorbs revisions. A failed batch never fails the sync: it is logged,
+counted, and left for the next run. Coordinates are never logged beyond
+the 2-dp cell key.
 """
 
 import logging
@@ -78,7 +87,10 @@ _INELIGIBLE_RUNS_SQL = """
 """
 
 # An hour "has data" when any measurement is present; an all-NULL row is
-# the explicit missing marker and stays eligible for re-fetching.
+# the explicit missing marker and stays eligible for re-fetching. This
+# check is also the cache's blind spot: it cannot tell final ERA5 values
+# from preliminary best_match (IFS) fill-in, so any non-NULL value counts
+# as done and stays frozen until a full re-fetch.
 _HAS_DATA = """(h.temperature_c IS NOT NULL
                 OR h.apparent_temperature_c IS NOT NULL
                 OR h.relative_humidity_pct IS NOT NULL
@@ -211,8 +223,10 @@ def plan_fetches(
 
     `cache` maps (location_key, hour) to has_data for hours already in
     raw_weather.hourly. Hours cached *with data* are skipped unless
-    `full`; all-NULL hours are always re-requested so delayed archive
-    data self-heals. Needed dates per cell merge into one batch while
+    `full` — even when that data is preliminary best_match fill-in,
+    because has_data cannot tell preliminary from final; all-NULL hours
+    (the archive genuinely had no data) are always re-requested so they
+    self-heal. Needed dates per cell merge into one batch while
     gaps stay within `gap_days`; whole days are fetched (and later
     stored) because the archive returns them anyway.
     """

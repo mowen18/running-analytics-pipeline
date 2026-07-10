@@ -154,7 +154,7 @@ def test_parses_hourly_arrays_into_rows():
 
 def test_api_nulls_stay_none_never_zero():
     payload = archive_payload(
-        ["2026-07-04T09:00"],  # inside the ERA5 archive delay: all nulls
+        ["2026-07-04T09:00"],  # an hour the archive has no data for: all nulls
         temperature_2m=[None],
         apparent_temperature=[None],
         relative_humidity_2m=[None],
