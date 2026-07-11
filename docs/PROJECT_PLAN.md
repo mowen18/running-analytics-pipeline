@@ -935,4 +935,11 @@ and data growth are separate events, verified separately.
    before the app change.
 8. Manual inspection of several real run-band segments for
    plausibility — deferred until the backfill lands data (the D16
-   criterion-6 precedent).
+   criterion-6 precedent). COMPLETED 2026-07-11, post-merge: backfill
+   drained exactly as pre-registered (eligible 8 → 0), 15/15
+   candidates analyzed, seg-dwell ≤ pooled ≤ window on every run,
+   band paces coherent with HR (monotone across bands within runs),
+   weekly sufficiency flips exactly at the D12 threshold, zero
+   exclusion reasons on real data; owner signed off on the two
+   flagged nuances (early-run dominant-band/avg-HR gaps, >20 min/mi
+   medians in low bands — run/walk material, as designed).
