@@ -669,6 +669,12 @@ The refactor is OUTPUT-INVARIANT: no metric formula, threshold, grain, or
 value changes anywhere; all six marts stay byte-identical, and `fct_runs`
 keeps its 34 columns byte-identical while additionally exposing the three
 analytic columns so marts can read core.
+Procedure note (added after Revision v1.4's verification postscript):
+the baseline schema is RETAINED until the PR merges — or dumped to a
+gitignored file — and dropping it is a post-merge cleanup step, so the
+proof stays re-executable during review; the v1.4 audit could only
+re-read its proof, not re-run it, because the baseline had already
+been dropped.
 
 **Revised decisions (design clarifications — no D-number is superseded;
 D3 schemas, D4 dbt location, and D19 marts-only app reads are untouched):**

@@ -70,7 +70,7 @@ _ELIGIBLE_RUNS_SQL = """
       AND a.start_date_utc >= %(floor)s
       AND (c.latitude IS NOT NULL
            OR jsonb_array_length(coalesce(a.payload->'start_latlng', '[]'::jsonb)) = 2)
-    ORDER BY a.start_date_utc
+    ORDER BY a.start_date_utc, a.activity_id
 """
 
 # Same run population, opposite coordinate/trainer test: runs that can

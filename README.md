@@ -12,10 +12,14 @@ tests, and docs — the dashboard is a thin cap.
 * Is cardiac drift decreasing during longer runs?
 * How is weekly volume changing alongside these efficiency measures?
 
-**Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D21 are
+**Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D22 are
 locked; Revision v1.1 supersedes D9 and amends D15; Revision v1.2 corrects
-the dbt layering — output-invariant).
-**Status:** all six phases complete (Release 1.1 + presentation layer).
+the dbt layering — output-invariant; Revision v1.3 makes the trend marts'
+rolling-column names static — vars change behavior, never interface;
+Revision v1.4 splits the stream fetch gate from the 45-minute analysis
+gates and adds D22, the pace-at-HR-band trend).
+**Status:** all six phases complete (Release 1.1 + presentation layer);
+revisions through v1.4 implemented and verified.
 
 ## Architecture
 
