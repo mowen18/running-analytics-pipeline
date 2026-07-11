@@ -23,6 +23,18 @@ drift as (
         exclusion_reason as drift_exclusion_reason
     from {{ ref('fct_drift_candidates') }}
 
+),
+
+band_candidates as (
+
+    -- Same route the drift reason takes (v1.4): NULL means the run is
+    -- not a band candidate OR was analyzed successfully — the candidate
+    -- table itself distinguishes the two.
+    select
+        activity_id,
+        exclusion_reason as band_exclusion_reason
+    from {{ ref('fct_band_candidates') }}
+
 )
 
 select
@@ -50,10 +62,12 @@ select
         else coalesce(bands.band_label, 'weather unavailable')
     end as temperature_band_label,
     drift.decoupling_pct,
-    drift.drift_exclusion_reason
+    drift.drift_exclusion_reason,
+    band_candidates.band_exclusion_reason
 from runs
 left join {{ ref('temperature_bands') }} bands
     on not runs.is_trainer
     and runs.weather_available
     and {{ temperature_band_range('runs.temperature_f') }}
 left join drift using (activity_id)
+left join band_candidates using (activity_id)

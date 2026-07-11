@@ -18,11 +18,14 @@ MANIFEST_PATH = Path(__file__).resolve().parent.parent / "dbt" / "target" / "man
 # Allowed parent groups per model layer (source parents are handled
 # separately below — no group set may grant blanket access to sources).
 # Deliberately MINIMAL: it encodes exactly the sanctioned graph;
-# widening is a deliberate, reviewed change. core <- seeds and
-# core <- staging are omitted because nothing uses them.
+# widening is a deliberate, reviewed change. core <- seeds, core <-
+# staging, and core <- core are omitted because nothing uses them.
+# intermediate <- seeds is the Revision v1.4 widening: hr_bands band
+# assignment happens at sample grain, which only intermediate sees —
+# proven red on that exact edge before this line changed.
 ALLOWED_PARENTS = {
     "staging": frozenset(),
-    "intermediate": frozenset({"staging", "intermediate"}),
+    "intermediate": frozenset({"staging", "intermediate", "seeds"}),
     "core": frozenset({"intermediate"}),
     "marts": frozenset({"core", "seeds", "marts"}),
 }

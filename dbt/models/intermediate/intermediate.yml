@@ -156,3 +156,80 @@ models:
           column is NOT NULL ({} for failed/unavailable rows).
         tests: [not_null]
 
+  - name: int_band_window_samples
+    description: >
+      One row per activity and pooled stream sample (D22, v1.4): the
+      valid, moving samples inside the band analysis window (elapsed
+      time trimmed by band_warmup_trim_minutes /
+      band_cooldown_trim_minutes), each carrying its HR band from the
+      hr_bands seed (joined by range on round(hr_bpm) via the
+      hr_band_range macro — the sanctioned seed read from intermediate,
+      v1.4's single layer-matrix widening) and its dwell contribution:
+      least(gap to the previous kept sample, drift_max_avg_sample_gap_s)
+      seconds, so recording gaps never inflate dwell. Pauses are simply
+      dropped from the pool — unlike drift's time-based halves they
+      cannot bias band medians, so there is deliberately no pause rung
+      downstream.
+    columns:
+      - name: activity_id
+        description: Strava activity id.
+        tests: [not_null]
+      - name: band_key
+        description: The sample's HR band (hr_bands seed key).
+        tests: [not_null]
+      - name: dwell_s
+        description: Capped per-sample dwell contribution, seconds.
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 3}
+      - name: velocity_m_per_s
+        description: Smoothed velocity (valid samples only, so 0-12).
+        tests: [not_null]
+
+  - name: int_run_band_assessment
+    description: >
+      One row per D22 band candidate (HR-carrying run at or past the
+      stream FETCH gate, stream_fetch_min_moving_minutes — D15 revised
+      v1.4): window stats and the band exclusion ladder, encoded ONCE
+      here so both core band models consume one verdict
+      (fct_band_candidates projects it; fct_run_band_segments filters
+      on it) — the int_run_efficiency pattern, avoiding any core ->
+      core edge. The ladder reports the FIRST failing check in
+      dependency order: stream availability -> required arrays ->
+      window length (pooled moving dwell vs band_min_window_minutes) ->
+      sample coverage (drift's mechanism and cap, reused) -> dwell
+      minimum (no band reaches band_min_dwell_minutes).
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per band candidate).
+        tests: [unique, not_null]
+      - name: pooled_moving_dwell_min
+        description: >
+          Minutes of pooled moving material inside the trimmed window
+          (sum of capped per-sample dwell) — the ladder's "window
+          length" input. 0.0, never NULL, when no samples reach the
+          pool.
+        tests: [not_null]
+      - name: qualifying_band_count
+        description: >
+          Bands whose dwell reaches band_min_dwell_minutes; 0, never
+          NULL, when streams are absent.
+        tests: [not_null]
+      - name: exclusion_reason
+        description: >
+          NULL when analyzed; otherwise the first failing D22 check.
+          Threshold values are rendered from the same dbt vars the
+          checks use, so reasons can never disagree with behavior.
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - 'streams not yet loaded'
+                  - 'streams unavailable from Strava'
+                  - 'stream fetch failed (retried by next backfill)'
+                  - 'missing required stream types'
+                  - 'analysis window under 10 minutes after trimming'
+                  - 'insufficient sample coverage'
+                  - 'no band meets the dwell minimum'
+

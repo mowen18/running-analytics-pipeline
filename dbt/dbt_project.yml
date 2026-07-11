@@ -34,6 +34,17 @@ vars:
   drift_min_window_minutes: 30
   drift_max_avg_sample_gap_s: 3
   drift_max_paused_fraction: 0.25
+  # D22 pace-at-HR-band analysis window (Revision v1.4). The fetch-gate
+  # var is the dbt-side twin of the Python setting of the same name
+  # (band candidacy: HR-carrying runs past the stream FETCH gate);
+  # drift candidacy keeps long_run_min_moving_minutes unchanged. Trims
+  # are lighter than drift's so a 20-minute run survives them; the
+  # coverage cap is drift_max_avg_sample_gap_s, reused not duplicated.
+  stream_fetch_min_moving_minutes: 20
+  band_warmup_trim_minutes: 5
+  band_cooldown_trim_minutes: 2
+  band_min_window_minutes: 10
+  band_min_dwell_minutes: 5
 
 # Layers map onto the five locked schemas (D3). generate_schema_name is
 # overridden so these names are used exactly, without dbt's default

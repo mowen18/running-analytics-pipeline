@@ -150,10 +150,11 @@ models:
       efficiency value (computed for EVERY heart-rate-carrying run),
       the D9 (revised v1.1) validity verdict with its data-validity
       exclusion reason, weather context with a per-run temperature-band
-      label (indoor / D14 band / weather unavailable), and drift
-      context (decoupling or the D16 exclusion reason) when the run is
-      a drift candidate. Exists so "why didn't run X count?" is
-      answerable from the analytics schema alone (D19 marts-only).
+      label (indoor / D14 band / weather unavailable), drift context
+      (decoupling or the D16 exclusion reason) when the run is a drift
+      candidate, and the D22 HR-band exclusion reason when the run is a
+      band candidate. Exists so "why didn't run X count?" is answerable
+      from the analytics schema alone (D19 marts-only).
     columns:
       - name: activity_id
         description: Strava activity id (grain of the mart).
@@ -180,6 +181,12 @@ models:
         description: Drift result when analyzed; NULL for non-candidates.
       - name: drift_exclusion_reason
         description: First failing D16 check for unanalyzed candidates.
+      - name: band_exclusion_reason
+        description: >
+          First failing D22 check for unanalyzed band candidates (v1.4,
+          the same route drift reasons take). NULL when the run is not
+          a band candidate OR was analyzed successfully —
+          fct_band_candidates distinguishes the two.
 
   - name: mart_run_drift
     description: >
@@ -237,4 +244,95 @@ models:
         tests: [not_null]
       - name: is_sufficient
         description: drift_run_count >= min_weekly_valid_runs (D12).
+        tests: [not_null]
+
+  - name: mart_band_weekly
+    description: >
+      One row per training week and HR band with any contributing run
+      (D22, v1.4): the weekly median pace at that band — the MEDIAN
+      ACROSS CONTRIBUTING RUNS of the run-level band medians (D11's
+      median-of-runs philosophy: one long run must not dominate a week
+      by sample count) — with the contributing-run count, average
+      temperature context, and the D12 sufficiency flag at this grain.
+      Deliberately NOT on the app's allow-list: the weekly columns
+      travel inside mart_band_trend, per the trend-mart interface.
+    columns:
+      - name: week_start_date
+        description: >
+          Monday of the local training week (composite grain with
+          band_key — assert_band_weekly_unique_per_week_band).
+        tests: [not_null]
+      - name: band_key
+        description: hr_bands seed key.
+        tests: [not_null]
+      - name: band_label
+        description: Display label from the hr_bands seed.
+        tests: [not_null]
+      - name: band_sort_order
+        description: Low-to-high HR display order from the seed.
+        tests: [not_null]
+      - name: contributing_run_count
+        description: Runs with a qualifying segment in this week x band.
+        tests: [not_null]
+      - name: median_velocity_m_per_s
+        description: >
+          Median across contributing runs of the run-level band median
+          velocity (medians live in velocity space end to end).
+        tests: [not_null]
+      - name: median_pace_min_per_mi
+        description: The weekly median as pace (derived from velocity).
+        tests: [not_null]
+      - name: avg_temperature_f
+        description: >
+          Average matched temperature of the contributing runs; NULL
+          when none carries weather. Context only (dry-bulb).
+      - name: is_sufficient
+        description: contributing_run_count >= min_weekly_valid_runs (D12).
+        tests: [not_null]
+
+  - name: mart_band_trend
+    description: >
+      One row per training week and HR band — the D22 mart the
+      dashboard reads (the Aerobic Efficiency view's band section; the
+      allow-list grows by exactly this name). Weekly columns ride in
+      from mart_band_weekly (the sanctioned one-hop mart-to-mart edge);
+      the rolling median is computed per band across run-level band
+      medians in the trailing trend_window_days window (D13 pattern),
+      with STATIC column names per v1.3 — the var changes the window,
+      never the interface. Sign of interest, observational never
+      causal: RISING pace (falling min/mi) at the same HR band signals
+      an improving aerobic base. The dashboard hides insufficient
+      week x band points from trend lines while the rows remain
+      queryable here.
+    columns:
+      - name: week_start_date
+        description: >
+          Monday of the local training week (composite grain with
+          band_key).
+        tests: [not_null]
+      - name: band_key
+        description: hr_bands seed key.
+        tests: [not_null]
+      - name: band_label
+        description: Display label from the hr_bands seed.
+        tests: [not_null]
+      - name: contributing_run_count
+        description: Runs behind the weekly statistic.
+        tests: [not_null]
+      - name: median_pace_min_per_mi
+        description: The week's median band pace (from mart_band_weekly).
+        tests: [not_null]
+      - name: rolling_median_velocity_m_per_s
+        description: >
+          Median across run-level band medians in the trailing
+          trend_window_days window (dbt var, default 28 — D13 pattern),
+          velocity space.
+      - name: rolling_median_pace_min_per_mi
+        description: The rolling median as pace (derived from velocity).
+      - name: rolling_band_run_count
+        description: Sample size behind the rolling median.
+        tests: [not_null]
+      - name: is_sufficient
+        description: >
+          The weekly D12 flag carried through from mart_band_weekly.
         tests: [not_null]
