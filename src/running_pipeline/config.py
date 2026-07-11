@@ -45,8 +45,10 @@ class Settings(BaseSettings):
     weather_request_budget: int = 500
     weather_batch_gap_days: int = 7
 
-    # Stream ingestion (decision D15 — used from Phase 5 / Release 1.1)
-    stream_min_moving_minutes: int = 45
+    # Stream ingestion (D15 revised v1.4: the FETCH gate is a
+    # data-availability decision, split from the 45-minute analysis
+    # gates — drift candidacy and long_run_eligible keep the dbt var).
+    stream_fetch_min_moving_minutes: int = 20
     stream_max_activities_per_run: int = 50
 
     # Coordinate backfill (map-privacy polyline fallback)

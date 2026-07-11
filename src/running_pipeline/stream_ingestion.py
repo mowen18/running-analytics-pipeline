@@ -1,11 +1,13 @@
-"""Activity-stream backfill: time-series samples for drift analysis.
+"""Activity-stream backfill: time-series samples for sample-grain analysis.
 
-Resumable by construction: eligibility (D15) selects runs with heart
-rate and >= STREAM_MIN_MOVING_MINUTES that have no streams row yet OR a
-'failed' row — success and 'unavailable' (Strava has no streams for the
-activity, which never changes after upload) are terminal, so re-running
-converges instead of re-burning budget. Each activity commits its own
-row, so an interruption loses at most the in-flight fetch.
+Resumable by construction: fetch eligibility (D15 revised v1.4 — a
+data-availability gate, not a metric-eligibility gate) selects runs
+with heart rate and >= STREAM_FETCH_MIN_MOVING_MINUTES that have no
+streams row yet OR a 'failed' row — success and 'unavailable' (Strava
+has no streams for the activity, which never changes after upload) are
+terminal, so re-running converges instead of re-burning budget. Each
+activity commits its own row, so an interruption loses at most the
+in-flight fetch.
 
 At most STREAM_MAX_ACTIVITIES_PER_RUN activities per invocation; the
 last successfully processed activity is logged. Rate limits stop the
@@ -31,8 +33,9 @@ from running_pipeline.strava_client import (
 
 logger = logging.getLogger(__name__)
 
-# D15: runs with HR, long enough for drift analysis, in the historical
-# window, not already loaded (no row) or previously failed (retryable).
+# D15 (revised v1.4): runs with HR, past the fetch gate, in the
+# historical window, not already loaded (no row) or previously failed
+# (retryable). Analysis gates live in dbt, not here.
 _ELIGIBLE_SQL = """
     SELECT a.activity_id
     FROM raw_strava.activities a
@@ -104,7 +107,7 @@ def sync_streams(
     activity_ids = select_eligible_activity_ids(
         conn,
         settings.sync_start_date,
-        settings.stream_min_moving_minutes,
+        settings.stream_fetch_min_moving_minutes,
         settings.stream_max_activities_per_run,
     )
     report = StreamSyncReport(eligible=len(activity_ids))
