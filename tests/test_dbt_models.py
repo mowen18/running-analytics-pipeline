@@ -346,8 +346,13 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     assert quality[5][2] is None  # no HR -> no value (missing, not zero)
 
 
-def insert_stream(db, activity_id, *, status="success", samples=None):
-    """Store a synthetic key_by_type streams payload (or a status-only row)."""
+def insert_stream(db, activity_id, *, status="success", samples=None, drop=()):
+    """Store a synthetic key_by_type streams payload (or a status-only row).
+
+    `drop` removes stream types from an otherwise complete payload — the
+    'missing required stream types' fixtures need a success row whose
+    arrays are incomplete.
+    """
     payload = {}
     sample_count = None
     if samples is not None:
@@ -360,6 +365,8 @@ def insert_stream(db, activity_id, *, status="success", samples=None):
             "moving": {"data": moving, "original_size": sample_count},
             "grade_smooth": {"data": [0.0] * sample_count, "original_size": sample_count},
         }
+        for stream_type in drop:
+            payload.pop(stream_type, None)
     db.execute(
         """
         INSERT INTO raw_strava.streams
@@ -394,6 +401,43 @@ def steady_stream(*, seconds=3600, step=1, first_half_hr=140.0, second_half_hr=1
             velocity.append(3.0)
         moving.append(not (pause and pause[0] <= t < pause[1]))
     return elapsed, hr, velocity, moving
+
+
+def band_stream(
+    *, seconds=3600, step=1, first_hr=135.0, second_hr=145.0, velocity=3.0, hr_schedule=None
+):
+    """A hand-checkable synthetic run for the D22 BAND window.
+
+    The steady_stream pattern re-sized to the band trims: the D22
+    window for the run is 300 .. (last sample - 120) s, and the
+    warm-up/cool-down carry absurd values (10 m/s sprint at HR 120,
+    0.5 m/s crawl at HR 190) so any trimming bug visibly shifts the
+    band inventory and its medians. By default HR switches exactly at
+    the band-window midpoint, so the run splits its dwell almost evenly
+    between two decade bands at constant `velocity`; `hr_schedule(t)`
+    overrides the two-band default for ladder fixtures (band cycling,
+    short band visits).
+    """
+    window_start = 300  # band_warmup_trim_minutes * 60
+    window_end = (seconds - step) - 120  # last sample - band_cooldown_trim_minutes * 60
+    midpoint = (window_start + window_end) / 2
+    elapsed = list(range(0, seconds, step))
+    hr, vel, moving = [], [], []
+    for t in elapsed:
+        if t < window_start:
+            hr.append(120.0)
+            vel.append(10.0)  # would pollute the low bands if trimming broke
+        elif t > seconds - 120:
+            hr.append(190.0)
+            vel.append(0.5)  # would poison the high bands if trimming broke
+        else:
+            if hr_schedule is not None:
+                hr.append(hr_schedule(t))
+            else:
+                hr.append(first_hr if t <= midpoint else second_hr)
+            vel.append(velocity)
+        moving.append(True)
+    return elapsed, hr, vel, moving
 
 
 def drift_run(db, activity_id, *, day, moving_time=3600, hr=145.0, **kwargs):
@@ -512,9 +556,7 @@ def test_relationships_test_fails_on_orphan_drift_candidate(db):
 
     # Insert AFTER the build and test WITHOUT rebuilding: a rebuild
     # would erase the orphan and a green run would prove nothing.
-    db.execute(
-        "INSERT INTO analytics.fct_drift_candidates (activity_id) VALUES (999999999)"
-    )
+    db.execute("INSERT INTO analytics.fct_drift_candidates (activity_id) VALUES (999999999)")
     db.commit()
 
     selector = "relationships_fct_drift_candidates_activity_id__activity_id__ref_fct_runs_"
@@ -527,3 +569,209 @@ def test_relationships_test_fails_on_orphan_drift_candidate(db):
 
     result = run_dbt("test", "--select", selector)
     assert result.returncode == 0, f"relationships test still failing:\n{result.stdout}"
+
+
+@pytest.mark.integration
+def test_relationships_test_fails_on_orphan_band_candidate(db):
+    # The fct_band_candidates -> fct_runs relationships test, proven red
+    # the same way as the drift one (commit f8c7185): both models descend
+    # from int_run_efficiency, so no raw fixture can produce an orphan —
+    # it must be injected into the built table.
+    drift_run(db, 1, day="2026-06-15")
+    insert_stream(db, 1, samples=steady_stream())
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    # Insert AFTER the build and test WITHOUT rebuilding: a rebuild
+    # would erase the orphan and a green run would prove nothing.
+    db.execute("INSERT INTO analytics.fct_band_candidates (activity_id) VALUES (999999999)")
+    db.commit()
+
+    selector = "relationships_fct_band_candidates_activity_id__activity_id__ref_fct_runs_"
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode != 0, "relationships test should fail on an orphan candidate"
+    assert selector in result.stdout
+
+    db.execute("DELETE FROM analytics.fct_band_candidates WHERE activity_id = 999999999")
+    db.commit()
+
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode == 0, f"relationships test still failing:\n{result.stdout}"
+
+
+@pytest.mark.integration
+def test_band_candidates_exclusive_exhaustive(db):
+    # D22 contract: every band candidate carries EXACTLY ONE of
+    # (>= 1 band segment, exclusion_reason) — mutually exclusive,
+    # jointly exhaustive. Fixtures put data on both sides so neither
+    # direction passes vacuously: an analyzed hour-long run, and a
+    # 25-minute HR run past the fetch gate but with no streams row yet.
+    drift_run(db, 1, day="2026-06-15")
+    insert_stream(db, 1, samples=steady_stream())
+    drift_run(db, 2, day="2026-06-16", moving_time=1500)  # candidate, no streams
+    # Not a candidate: HR run under the 20-minute fetch gate.
+    insert_activity(
+        db, 3, start_latlng=None, average_heartrate=140.0, moving_time=900, elapsed_time=1000
+    )
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    candidates = {
+        row[0]
+        for row in db.execute("SELECT activity_id FROM analytics.fct_band_candidates").fetchall()
+    }
+    assert candidates == {1, 2}  # 3 is under the fetch gate
+
+    violations = db.execute(
+        """
+        SELECT c.activity_id, c.exclusion_reason, coalesce(s.segment_count, 0)
+        FROM analytics.fct_band_candidates c
+        LEFT JOIN (
+            SELECT activity_id, count(*) AS segment_count
+            FROM analytics.fct_run_band_segments
+            GROUP BY activity_id
+        ) s USING (activity_id)
+        WHERE (c.exclusion_reason IS NULL) != (coalesce(s.segment_count, 0) >= 1)
+        """
+    ).fetchall()
+    assert violations == [], f"candidates violating the segments-XOR-reason contract: {violations}"
+
+
+@pytest.mark.integration
+def test_band_medians_dwell_and_exclusion_ladder(db):
+    # Acceptance criterion 3: constant 3.0 m/s, HR stepping 135 -> 145
+    # at the band-window midpoint -> two decade bands, near-equal dwell,
+    # median velocity 3.0 in each. The poisoned warm-up/cool-down means
+    # a trimming break shifts every number asserted below.
+    drift_run(db, 1, day="2026-06-15")
+    insert_stream(db, 1, samples=band_stream())
+    # Same week, slower run: the weekly statistic must be the median
+    # ACROSS RUNS of the run-level medians (D11), not a sample pool.
+    drift_run(db, 2, day="2026-06-17")
+    insert_stream(db, 2, samples=band_stream(first_hr=137.0, second_hr=147.0, velocity=2.5))
+    # Criterion 4's dwell-minimum fixture: a 2-minute visit to the 150s
+    # band must leave that band ABSENT while the run itself analyzes.
+    drift_run(db, 3, day="2026-06-22")
+    insert_stream(
+        db,
+        3,
+        samples=band_stream(
+            hr_schedule=lambda t: 155.0 if t < 420 else (135.0 if t <= 1889.5 else 145.0)
+        ),
+    )
+    # One fixture per remaining reachable ladder rung (criterion 4):
+    drift_run(db, 4, day="2026-06-18")  # no streams row at all
+    drift_run(db, 5, day="2026-06-19")
+    insert_stream(db, 5, status="unavailable")
+    drift_run(db, 6, day="2026-06-19")
+    insert_stream(db, 6, status="failed")
+    drift_run(db, 7, day="2026-06-20")
+    insert_stream(db, 7, samples=band_stream(), drop=("heartrate",))
+    drift_run(db, 8, day="2026-06-20", moving_time=1500)  # 25-min run,
+    insert_stream(db, 8, samples=band_stream(seconds=900))  # ~8-min window
+    drift_run(db, 9, day="2026-06-21")
+    insert_stream(db, 9, samples=band_stream(step=5))  # 5 s gaps > 3 s max
+    drift_run(db, 10, day="2026-06-21", moving_time=1500)
+    insert_stream(  # cycles FIVE bands every 60 s across an 18-block
+        # window: no band collects more than 4 blocks (240 s < 5 min)
+        db,
+        10,
+        samples=band_stream(seconds=1500, hr_schedule=lambda t: 135.0 + 10.0 * ((t // 60) % 5)),
+    )
+    # Not candidates: an HR run under the 20-minute FETCH gate, and a
+    # long run without HR (the other half of the revised D15 gate).
+    insert_activity(
+        db, 11, start_latlng=None, average_heartrate=140.0, moving_time=900, elapsed_time=1000
+    )
+    drift_run(db, 12, day="2026-06-23", hr=None)
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    candidates = {
+        row[0]: row[1]
+        for row in db.execute(
+            "SELECT activity_id, exclusion_reason FROM analytics.fct_band_candidates"
+        ).fetchall()
+    }
+    assert set(candidates) == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}  # 11 (short) and 12 (no HR) are out
+
+    # Deterministic reasons, first failing check per run (the ladder).
+    assert candidates[4] == "streams not yet loaded"
+    assert candidates[5] == "streams unavailable from Strava"
+    assert candidates[6] == "stream fetch failed (retried by next backfill)"
+    assert candidates[7] == "missing required stream types"
+    assert candidates[8] == "analysis window under 10 minutes after trimming"
+    assert candidates[9] == "insufficient sample coverage"
+    assert candidates[10] == "no band meets the dwell minimum"
+    assert candidates[1] is None and candidates[2] is None and candidates[3] is None
+
+    segments = {
+        (row[0], row[1]): (float(row[2]), float(row[3]), float(row[4]))
+        for row in db.execute(
+            "SELECT activity_id, band_key, dwell_s, median_velocity_m_per_s,"
+            "       median_pace_min_per_mi"
+            "  FROM analytics.fct_run_band_segments"
+        ).fetchall()
+    }
+    # Run 1, hand-checked: window 300..3479 s; 135 bpm through t=1889
+    # (1590 samples: the first carries the 3 s dwell cap, the rest 1 s
+    # gaps), 145 bpm for t=1890..3479 (1590 samples, all 1 s gaps).
+    # Median velocity 3.0 m/s -> 1609.344 / 180 = 8.94 min/mi.
+    assert segments[(1, "130_139")] == (1592.0, 3.0, 8.94)
+    assert segments[(1, "140_149")] == (1590.0, 3.0, 8.94)
+    # Run 2: same shape at 2.5 m/s -> 1609.344 / 150 = 10.73 min/mi.
+    assert segments[(2, "130_139")][1:] == (2.5, 10.73)
+    assert segments[(2, "140_149")][1:] == (2.5, 10.73)
+    # Run 3: the 2-minute 150s visit deposits NO segment (dwell 122 s
+    # < 5 min); the run still contributes its two real bands.
+    run3_bands = {band for (activity, band) in segments if activity == 3}
+    assert run3_bands == {"130_139", "140_149"}
+
+    # Weekly (D11 median-of-runs, D12 at week x band grain): the week
+    # of 2026-06-15 has runs 1 (3.0 m/s) and 2 (2.5 m/s) in both bands
+    # -> median velocity 2.75 -> 1609.344 / 165 = 9.75 min/mi.
+    weekly = {
+        row[0]: (row[1], float(row[2]), row[3])
+        for row in db.execute(
+            "SELECT band_key, contributing_run_count, median_pace_min_per_mi, is_sufficient"
+            "  FROM analytics.mart_band_weekly WHERE week_start_date = '2026-06-15'"
+        ).fetchall()
+    }
+    assert weekly["130_139"] == (2, 9.75, True)
+    assert weekly["140_149"] == (2, 9.75, True)
+    # Run 3's week has one contributing run: present but insufficient.
+    (run3_sufficient,) = db.execute(
+        "SELECT is_sufficient FROM analytics.mart_band_weekly"
+        " WHERE week_start_date = '2026-06-22' AND band_key = '130_139'"
+    ).fetchone()
+    assert run3_sufficient is False
+
+    # Trend: static rolling columns; the 28-day window ending the later
+    # week's Sunday spans all three analyzed runs.
+    trend = {
+        row[0]: (float(row[1]), row[2], row[3])
+        for row in db.execute(
+            "SELECT week_start_date::text, rolling_median_pace_min_per_mi,"
+            "       rolling_band_run_count, is_sufficient"
+            "  FROM analytics.mart_band_trend WHERE band_key = '130_139'"
+        ).fetchall()
+    }
+    assert trend["2026-06-15"] == (9.75, 2, True)  # runs 1 + 2
+    assert trend["2026-06-22"] == (8.94, 3, False)  # runs 1 + 2 + 3: median 3.0 m/s
+
+    # The reasons ride to the dashboard mart on the drift route.
+    quality = {
+        row[0]: row[1]
+        for row in db.execute(
+            "SELECT activity_id, band_exclusion_reason FROM analytics.mart_run_quality"
+        ).fetchall()
+    }
+    assert quality[4] == "streams not yet loaded"
+    assert quality[1] is None  # analyzed
+    assert quality[11] is None  # not a band candidate at all

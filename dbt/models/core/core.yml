@@ -132,3 +132,109 @@ models:
           NULL when the run was analyzed; otherwise the first failing
           D16 check, with thresholds rendered from the same dbt vars
           the checks use.
+
+  - name: fct_band_candidates
+    description: >
+      One row per D22 pace-at-HR-band CANDIDATE — an HR-carrying run at
+      or past the stream FETCH gate (stream_fetch_min_moving_minutes,
+      D15 revised v1.4; drift candidacy keeps the 45-minute var and
+      stays a strict subset by construction). An explicit-column core
+      projection of int_run_band_assessment, where the exclusion ladder
+      is encoded once, in dependency order: stream availability ->
+      required arrays -> window length (pooled moving dwell after the
+      5/2-minute trims) -> sample coverage -> dwell minimum. Every
+      candidate carries exactly one of (>= 1 row in
+      fct_run_band_segments, exclusion_reason) — the
+      assert_band_candidates_exclusive_exhaustive contract.
+    columns:
+      - name: activity_id
+        description: >
+          Strava activity id (one row per band candidate). Every
+          candidate must exist in fct_runs — the relationship is a
+          tested contract (proven red on an injected orphan first, the
+          v1.3 discipline), not a structural accident of both models
+          descending from int_run_efficiency.
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_runs')
+                field: activity_id
+      - name: window_duration_s
+        description: >
+          Elapsed span of the band analysis window after the
+          warm-up/cool-down trims; NULL when streams are absent.
+      - name: avg_sample_gap_s
+        description: >
+          window_duration_s / valid samples in the window (moving or
+          not) — the coverage-check input, the same mechanism drift
+          uses with the same drift_max_avg_sample_gap_s cap.
+      - name: pooled_moving_dwell_min
+        description: >
+          Minutes of pooled moving material behind the run's band
+          medians (sum of capped per-sample dwell): the "window length"
+          the ladder tests against band_min_window_minutes.
+      - name: qualifying_band_count
+        description: >
+          HR bands where this run's dwell reaches
+          band_min_dwell_minutes; 0 exactly when the final ladder rung
+          fires.
+      - name: exclusion_reason
+        description: >
+          NULL when the run was analyzed (it then owns >= 1 band
+          segment); otherwise the first failing D22 check, thresholds
+          rendered from the same dbt vars the checks use.
+
+  - name: fct_run_band_segments
+    description: >
+      One row per analyzed run and HR band with dwell of at least
+      band_min_dwell_minutes (D22) — transitions passing through a band
+      never deposit junk medians. Medians are computed in VELOCITY
+      space over the pooled (valid + moving + trimmed-window) samples;
+      pace is derived from the median velocity for display. Excluded
+      candidates have NO rows here; their reasons live in
+      fct_band_candidates and reach the dashboard as
+      mart_run_quality.band_exclusion_reason.
+    columns:
+      - name: activity_id
+        description: >
+          Strava activity id. Composite grain with band_key
+          (assert_band_segments_unique_per_run_band); every row's run
+          must be a band candidate.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_band_candidates')
+                field: activity_id
+      - name: band_key
+        description: hr_bands seed key (10-bpm bands, open-ended edges).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('hr_bands')
+                field: band_key
+      - name: dwell_s
+        description: >
+          Seconds of capped per-sample dwell this run spent in the band
+          within the analysis window; at least band_min_dwell_minutes
+          by construction (assert_band_segments_meet_dwell_minimum).
+        tests: [not_null]
+      - name: sample_count
+        description: Pooled samples behind the band medians.
+        tests: [not_null]
+      - name: median_velocity_m_per_s
+        description: Median pooled velocity in the band (the base measure).
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 12}
+      - name: median_pace_min_per_mi
+        description: >
+          1609.344 / (median velocity * 60) — the same monotone
+          transformation every pace column in the band chain applies to
+          a velocity median. Falling min/mi at the same band = the
+          observational improvement signal.
+        tests: [not_null]

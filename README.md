@@ -96,7 +96,7 @@ make reconcile        # full reconciliation from SYNC_START_DATE
 make backfill-coordinates # resolve run-start coordinates (payload, else polyline)
 make sync-weather     # fetch hourly weather for outdoor runs not yet covered
 make reconcile-weather # re-fetch weather even for already-cached hours
-make sync-streams     # backfill activity streams for drift-eligible runs
+make sync-streams     # backfill activity streams for fetch-eligible runs
 make app              # launch the Streamlit dashboard (three views)
 make all              # full refresh: every sync, then dbt build
 make dbt-build        # build all dbt models and run their tests
@@ -267,18 +267,25 @@ inventory but deliberately not modeled downstream.
 |---|---|---|---|
 | Staging | `stg_strava__activities` | `staging` | one row per activity, any sport type |
 | Staging | `stg_weather__hourly` | `staging` | one row per D7 cell + UTC hour, metric & imperial units |
+| Intermediate | `int_band_window_samples` | `intermediate` | one row per activity + pooled band-window sample: HR band + capped dwell contribution (D22) |
+| Intermediate | `int_run_band_assessment` | `intermediate` | one row per band candidate — window stats + the D22 exclusion ladder, encoded once |
 | Intermediate | `int_run_efficiency` | `intermediate` | one row per running activity — derived measures, weather context, efficiency and validity verdict; the sole parent of `fct_runs`, and also feeds `fct_drift_candidates` |
 | Intermediate | `int_run_stream_samples` | `intermediate` | one row per activity + aligned stream sample |
 | Intermediate | `int_run_stream_state` | `intermediate` | one row per stream-fetch attempt: status + required-array presence |
 | Intermediate | `int_runs_with_weather` | `intermediate` | one row per running activity + nearest qualifying observation |
+| Core | `fct_band_candidates` | `analytics` | one row per band candidate — projection of the assessment: window stats + exclusion verdict (D22) |
 | Core | `fct_drift_candidates` | `analytics` | one row per drift candidate + halves and exclusion verdict |
+| Core | `fct_run_band_segments` | `analytics` | one row per analyzed run × HR band with ≥ 5 min dwell: dwell, sample count, median velocity/pace |
 | Core | `fct_runs` | `analytics` | one row per running activity — the mart-facing contract: measures, weather, validity + efficiency |
+| Mart | `mart_band_trend` | `analytics` | one row per week × HR band + 28-day rolling median pace (the mart the dashboard reads) |
+| Mart | `mart_band_weekly` | `analytics` | one row per week × HR band — median of per-run band medians (not app-facing; travels inside the trend mart) |
 | Mart | `mart_drift_trend` | `analytics` | one row per week of drift runs + rolling median |
 | Mart | `mart_efficiency_by_temp_band` | `analytics` | one row per D14 temp band (+ explicit weather-unavailable row) |
 | Mart | `mart_efficiency_trend` | `analytics` | one row per week + 28-day rolling median |
 | Mart | `mart_run_drift` | `analytics` | one row per analyzed drift run |
-| Mart | `mart_run_quality` | `analytics` | one row per running activity + quality verdicts (validity, band, drift) |
+| Mart | `mart_run_quality` | `analytics` | one row per running activity + quality verdicts (validity, band, drift, HR band) |
 | Mart | `mart_weekly_training` | `analytics` | one row per training week |
+| Seed | `hr_bands` | `analytics` | the D22 10-bpm HR bands (open-ended edges), defined once, joined by range everywhere |
 | Seed | `temperature_bands` | `analytics` | the D14 bands, defined once, joined by range everywhere |
 
 Conventions worth knowing: the running-activity filter
@@ -359,12 +366,36 @@ joined by range; valid runs without matched weather appear in an
 explicit *weather unavailable* row rather than vanishing from the
 comparison.
 
+**Pace at heart-rate band (D22, Revision v1.4)** — the sample-grain
+counterpart to efficiency: pool each run's valid, moving stream samples
+after trimming the first 5 minutes (warm-up HR is still climbing —
+untrimmed samples pair a too-low HR with full pace and flatter the low
+bands) and the final 2 minutes; assign each sample a 10-bpm HR band
+(`hr_bands` seed, joined by range like D14); a run contributes to a
+band only with ≥ 5 minutes of dwell there, so transitions passing
+through a band never deposit junk medians. Per run per band the metric
+is the **median velocity** (pace derived from it for display); the
+weekly statistic is the **median across contributing runs of those
+run-level medians** (D11's median-of-runs philosophy), with the D12
+2-run sufficiency flag at week × band grain and a 28-day rolling median
+per band (D13). **Sign of interest: rising pace — falling min/mi — at
+the same HR band is the observational signal of an improving aerobic
+base**, with the same never-causal framing as efficiency and drift.
+Dwell is capped per sample at the drift coverage gap (3 s), and runs
+failing any check carry a deterministic `band_exclusion_reason` through
+`fct_band_candidates` into `mart_run_quality`.
+
 ## Stream ingestion and cardiac drift
 
 `make sync-streams` backfills time-series streams (time, heart rate,
-smoothed velocity, moving flag, grade) for drift-eligible runs per D15:
-running activity, heart rate present, moving time ≥ 45 min, within the
-historical window. The backfill is **resumable by construction**: each
+smoothed velocity, moving flag, grade) for fetch-eligible runs per D15
+(revised v1.4): running activity, heart rate present, moving time ≥
+`STREAM_FETCH_MIN_MOVING_MINUTES` (default 20), within the historical
+window. Fetching is a **data-availability decision**, split in v1.4
+from the analysis gates — drift candidacy and `long_run_eligible` keep
+their unchanged 45-minute threshold in dbt, and drift candidates remain
+a strict subset of band candidates by construction. The backfill is
+**resumable by construction**: each
 activity's outcome commits as its own row in `raw_strava.streams` with
 an explicit status — `success` and `unavailable` (Strava has no streams
 for that activity; that never changes) are terminal, `failed` is retried
@@ -400,14 +431,17 @@ deleted.
 
 `make app` serves exactly three Streamlit views (decision D19):
 **Aerobic Efficiency** (weekly + 28-day rolling trend, temperature-band
-comparison), **Weekly Training** (mileage, moving time, run counts), and
-**Cardiac Drift** (run-level decoupling with the rolling trend). The app
-is deliberately thin: it reads **only the six mart tables** — enforced
-by an explicit table-level allow-list in the app code plus a test that
-pins the list to exactly the six marts and refuses any other relation,
-core facts included (core and marts share the `analytics` schema, so a
-schema check alone could not tell them apart) — and contains no business
-logic; every metric, threshold, and flag is computed and tested in dbt.
+comparison, and the D22 pace-at-HR-band section — the same analytical
+question with intensity controlled by construction, so it lives inside
+this view rather than amending the three-view cap), **Weekly Training**
+(mileage, moving time, run counts), and **Cardiac Drift** (run-level
+decoupling with the rolling trend). The app is deliberately thin: it
+reads **only the approved mart tables** — enforced by an explicit
+table-level allow-list in the app code plus a test that pins the list's
+exact contents and refuses any other relation, core facts included
+(core and marts share the `analytics` schema, so a schema check alone
+could not tell them apart) — and contains no business logic; every
+metric, threshold, and flag is computed and tested in dbt.
 Sample counts appear beside every statistic; weeks below the D12 run
 count are flagged `is_sufficient = false` and excluded from trend lines,
 but stay visible in every table; and each empty view explains exactly

@@ -1,5 +1,5 @@
 """Thin presentation layer: exactly three views (D19), reading ONLY the
-six mart tables. No business logic here — every
+approved mart tables. No business logic here — every
 metric, threshold, flag, and exclusion is computed in dbt; this file
 selects, charts, and explains. Sample counts and data sufficiency are
 always visible, missing data is explained rather than hidden, and all
@@ -50,10 +50,12 @@ def week_axis(week_dates) -> alt.Axis:
     return alt.Axis(format="%b %d", labelAngle=0, values=values, labelOverlap="greedy")
 
 
-# The app may read exactly the six marts — nothing else, even in the
-# analytics schema (core facts live there too). The allow-list is the
-# D19 "marts only" rule made mechanical; tests/test_app.py pins its
-# contents and asserts core relations are refused.
+# The app may read exactly the approved marts — nothing else, even in
+# the analytics schema (core facts live there too). The allow-list is
+# the D19 "marts only" rule made mechanical; tests/test_app.py pins its
+# contents and asserts everything off the list is refused.
+# mart_band_weekly is deliberately absent: the weekly band statistics
+# travel inside mart_band_trend (v1.4 — the list grows by exactly one).
 ANALYTICS_TABLES = (
     "mart_weekly_training",
     "mart_efficiency_trend",
@@ -61,6 +63,7 @@ ANALYTICS_TABLES = (
     "mart_run_quality",
     "mart_run_drift",
     "mart_drift_trend",
+    "mart_band_trend",
 )
 
 OBSERVATIONAL_NOTE = (
@@ -173,6 +176,26 @@ RUN_QUALITY_COLUMNS = {
     "temperature_band_label": st.column_config.TextColumn("Band"),
     "decoupling_pct": st.column_config.NumberColumn("Decoupling %", format="%.2f"),
     "drift_exclusion_reason": st.column_config.TextColumn("Drift note"),
+    "band_exclusion_reason": st.column_config.TextColumn("HR-band note"),
+}
+
+BAND_TREND_COLUMNS = {
+    "week_start_date": st.column_config.DateColumn("Week", format="MMM D"),
+    "band_key": None,  # the label column already carries it
+    "band_label": st.column_config.TextColumn("HR band"),
+    "band_sort_order": None,
+    "contributing_run_count": st.column_config.NumberColumn("Runs (n)"),
+    "median_velocity_m_per_s": None,  # pace is the display unit
+    "median_pace_min_per_mi": st.column_config.NumberColumn(
+        "Weekly median (min/mi)", format="%.2f"
+    ),
+    "rolling_median_velocity_m_per_s": None,
+    "rolling_median_pace_min_per_mi": st.column_config.NumberColumn(
+        "28-day median (min/mi)", format="%.2f"
+    ),
+    "rolling_band_run_count": st.column_config.NumberColumn("28-day (n)"),
+    "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
+    "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
 }
 
 
@@ -225,9 +248,7 @@ def efficiency_view():
                 y=alt.Y("rolling_median_efficiency:Q", scale=y_scale),
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
-                    alt.Tooltip(
-                        "rolling_median_efficiency:Q", title="28-day median", format=".4f"
-                    ),
+                    alt.Tooltip("rolling_median_efficiency:Q", title="28-day median", format=".4f"),
                     alt.Tooltip("rolling_valid_run_count:Q", title="runs in window (n)"),
                 ],
             )
@@ -289,6 +310,76 @@ def efficiency_view():
             "each band — runs are banded individually by their own matched "
             "temperature, never averaged by week."
         )
+
+    st.subheader("Pace at heart-rate band")
+    st.caption(
+        "Median pace across runs at the same 10-bpm heart-rate band: stream "
+        "samples pooled after a 5-minute warm-up and 2-minute cool-down trim, "
+        "a run counts in a band only with ≥ 5 minutes there, weekly point = "
+        "median of per-run band medians (D11), 28-day rolling median on top. "
+        "RISING pace — falling min/mi — at the same band is the observational "
+        "signal of an improving aerobic base (D22)."
+    )
+    band_trend = load("mart_band_trend")
+    band_sufficient = band_trend[band_trend["is_sufficient"].astype(bool)].dropna(
+        subset=["rolling_median_pace_min_per_mi"]
+    )
+    if band_sufficient.empty:
+        st.info(
+            "No band trend yet: no week has 2 contributing runs at the same "
+            "HR band. Runs of 20–45 minutes gain streams as the post-v1.4 "
+            "backfill drains, so this section fills in after `make "
+            "sync-streams` catches up."
+        )
+    else:
+        axis = week_axis(band_sufficient["week_start_date"])
+        band_lines = (
+            alt.Chart(band_sufficient)
+            .mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=36))
+            .encode(
+                x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+                # reverse=True: pace improves DOWNWARD in min/mi, so the
+                # reversed axis makes an improving aerobic base read as
+                # an upward trend — the caption states the convention.
+                y=alt.Y(
+                    "rolling_median_pace_min_per_mi:Q",
+                    title="min per mile (up = faster)",
+                    scale=alt.Scale(zero=False, nice=True, reverse=True),
+                ),
+                # Ordered low->high HR bands on the ordinal blue ramp,
+                # same philosophy as the temperature bands.
+                color=alt.Color(
+                    "band_label:N",
+                    sort=alt.EncodingSortField(field="band_sort_order", op="min"),
+                    scale=alt.Scale(scheme="blues"),
+                    title="HR band",
+                ),
+                tooltip=[
+                    alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
+                    alt.Tooltip("band_label:N", title="band"),
+                    alt.Tooltip(
+                        "rolling_median_pace_min_per_mi:Q", title="28-day median", format=".2f"
+                    ),
+                    alt.Tooltip("rolling_band_run_count:Q", title="runs in window (n)"),
+                    alt.Tooltip("median_pace_min_per_mi:Q", title="weekly median", format=".2f"),
+                    alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
+                ],
+            )
+            .properties(height=320)
+        )
+        st.altair_chart(themed(band_lines), use_container_width=True)
+        st.caption(
+            "One line per HR band: the 28-day rolling median pace at that "
+            "band. Week × band points below the 2-run sufficiency threshold "
+            "are excluded from the lines and flagged in the table."
+        )
+    st.dataframe(
+        band_trend.sort_values(["week_start_date", "band_sort_order"]),
+        use_container_width=True,
+        hide_index=True,
+        column_config=BAND_TREND_COLUMNS,
+    )
+    st.caption("All week × band rows, including insufficient ones — nothing dropped, only flagged.")
 
     st.subheader("Every run, with its verdict")
     quality = load("mart_run_quality").sort_values("start_date_local", ascending=False)

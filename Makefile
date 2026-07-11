@@ -48,7 +48,7 @@ sync-weather:  ## fetch hourly weather for outdoor runs not yet covered
 reconcile-weather:  ## re-fetch weather even for already-cached hours
 	$(VENV)/running-pipeline sync-weather --full
 
-sync-streams:  ## backfill activity streams for drift-eligible runs (resumable)
+sync-streams:  ## backfill activity streams for fetch-eligible runs (resumable)
 	$(VENV)/running-pipeline sync-streams
 
 dbt-profile:   ## create dbt/profiles.yml from the example if absent

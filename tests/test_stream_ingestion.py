@@ -189,18 +189,22 @@ def stream_settings(tmp_path, **overrides):
 
 @pytest.mark.integration
 def test_eligibility_selects_hr_runs_of_sufficient_length(db, tmp_path):
-    insert_run(db, 1)  # eligible
+    insert_run(db, 1)  # eligible (50 min)
     insert_run(db, 2, has_heartrate=False)  # no HR — D15 excludes
-    insert_run(db, 3, moving_time=2000)  # under 45 min
+    insert_run(db, 3, moving_time=1000)  # under the 20-minute FETCH gate
     insert_run(db, 4, sport_type="Walk")  # not a run
+    # 30 minutes: ineligible under the old 45-minute coupling, fetchable
+    # since the v1.4 split — fetching is a data-availability decision;
+    # the 45-minute analysis gates live in dbt.
+    insert_run(db, 5, moving_time=1800)
     db.commit()
-    client = FakeStreamClient({1: stream_payload()})
+    client = FakeStreamClient({1: stream_payload(), 5: stream_payload()})
 
     report = sync_streams(stream_settings(tmp_path), client, db)
 
-    assert client.calls == [1]
-    assert report == StreamSyncReport(eligible=1, succeeded=1, last_processed_id=1)
-    assert stream_statuses(db) == {1: "success"}
+    assert client.calls == [1, 5]
+    assert report == StreamSyncReport(eligible=2, succeeded=2, last_processed_id=5)
+    assert stream_statuses(db) == {1: "success", 5: "success"}
 
 
 @pytest.mark.integration

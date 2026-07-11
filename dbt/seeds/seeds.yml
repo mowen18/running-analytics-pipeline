@@ -35,3 +35,39 @@ seeds:
       - name: sort_order
         description: Cold-to-warm display order.
         tests: [unique, not_null]
+
+  - name: hr_bands
+    description: >
+      The D22 HR bands (v1.4): 10-bpm decade bands spanning the 90-200
+      avg-HR sanity vocabulary, plus open-ended "< 90 bpm" and
+      ">= 200 bpm" edge bands so every instrument-sane sample (HR
+      25-250 in int_run_stream_samples) lands in exactly one band —
+      nothing is silently dropped. Defined ONCE here and joined by
+      range via the hr_band_range macro, never repeated as CASE logic
+      in model SQL (the D14 discipline). Bounds are INCLUSIVE integers;
+      callers join on round(hr_bpm) so a fractional HR cannot fall
+      between bounds. A NULL bound means unbounded on that side.
+      assert_hr_bands_cover_all_hr proves the bands stay gap-free and
+      non-overlapping at 1-bpm resolution if anyone edits this file.
+    config:
+      schema: analytics
+      column_types:
+        band_key: text
+        band_label: text
+        min_hr_bpm: integer
+        max_hr_bpm: integer
+        sort_order: integer
+    columns:
+      - name: band_key
+        description: Stable machine-readable key (below_90 ... 200_plus).
+        tests: [unique, not_null]
+      - name: band_label
+        description: Display label ("90–99 bpm" style).
+        tests: [unique, not_null]
+      - name: min_hr_bpm
+        description: Inclusive lower bound, bpm; NULL = unbounded below.
+      - name: max_hr_bpm
+        description: Inclusive upper bound, bpm; NULL = unbounded above.
+      - name: sort_order
+        description: Low-to-high HR display order.
+        tests: [unique, not_null]
