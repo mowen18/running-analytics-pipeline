@@ -199,6 +199,7 @@ flowchart LR
     end
 
     subgraph seeds["Seeds"]
+        seed_running_analytics_hr_bands(["hr_bands"])
         seed_running_analytics_temperature_bands(["temperature_bands"])
     end
 
@@ -208,6 +209,8 @@ flowchart LR
     end
 
     subgraph intermediate["Intermediate"]
+        model_running_analytics_int_band_window_samples["int_band_window_samples"]
+        model_running_analytics_int_run_band_assessment["int_run_band_assessment"]
         model_running_analytics_int_run_efficiency["int_run_efficiency"]
         model_running_analytics_int_run_stream_samples["int_run_stream_samples"]
         model_running_analytics_int_run_stream_state["int_run_stream_state"]
@@ -215,11 +218,15 @@ flowchart LR
     end
 
     subgraph core["Core"]
+        model_running_analytics_fct_band_candidates["fct_band_candidates"]
         model_running_analytics_fct_drift_candidates["fct_drift_candidates"]
+        model_running_analytics_fct_run_band_segments["fct_run_band_segments"]
         model_running_analytics_fct_runs["fct_runs"]
     end
 
     subgraph marts["Marts"]
+        model_running_analytics_mart_band_trend["mart_band_trend"]
+        model_running_analytics_mart_band_weekly["mart_band_weekly"]
         model_running_analytics_mart_drift_trend["mart_drift_trend"]
         model_running_analytics_mart_efficiency_by_temp_band["mart_efficiency_by_temp_band"]
         model_running_analytics_mart_efficiency_trend["mart_efficiency_trend"]
@@ -228,22 +235,37 @@ flowchart LR
         model_running_analytics_mart_weekly_training["mart_weekly_training"]
     end
 
+    model_running_analytics_fct_band_candidates --> model_running_analytics_mart_run_quality
     model_running_analytics_fct_drift_candidates --> model_running_analytics_mart_run_drift
     model_running_analytics_fct_drift_candidates --> model_running_analytics_mart_run_quality
+    model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_band_trend
+    model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_band_weekly
+    model_running_analytics_fct_runs --> model_running_analytics_mart_band_weekly
     model_running_analytics_fct_runs --> model_running_analytics_mart_efficiency_by_temp_band
     model_running_analytics_fct_runs --> model_running_analytics_mart_efficiency_trend
     model_running_analytics_fct_runs --> model_running_analytics_mart_run_drift
     model_running_analytics_fct_runs --> model_running_analytics_mart_run_quality
     model_running_analytics_fct_runs --> model_running_analytics_mart_weekly_training
+    model_running_analytics_int_band_window_samples --> model_running_analytics_fct_run_band_segments
+    model_running_analytics_int_band_window_samples --> model_running_analytics_int_run_band_assessment
+    model_running_analytics_int_run_band_assessment --> model_running_analytics_fct_band_candidates
+    model_running_analytics_int_run_band_assessment --> model_running_analytics_fct_run_band_segments
     model_running_analytics_int_run_efficiency --> model_running_analytics_fct_drift_candidates
     model_running_analytics_int_run_efficiency --> model_running_analytics_fct_runs
+    model_running_analytics_int_run_efficiency --> model_running_analytics_int_run_band_assessment
     model_running_analytics_int_run_stream_samples --> model_running_analytics_fct_drift_candidates
+    model_running_analytics_int_run_stream_samples --> model_running_analytics_int_band_window_samples
+    model_running_analytics_int_run_stream_samples --> model_running_analytics_int_run_band_assessment
     model_running_analytics_int_run_stream_state --> model_running_analytics_fct_drift_candidates
+    model_running_analytics_int_run_stream_state --> model_running_analytics_int_run_band_assessment
     model_running_analytics_int_runs_with_weather --> model_running_analytics_int_run_efficiency
+    model_running_analytics_mart_band_weekly --> model_running_analytics_mart_band_trend
     model_running_analytics_mart_run_drift --> model_running_analytics_mart_drift_trend
     model_running_analytics_mart_weekly_training --> model_running_analytics_mart_efficiency_trend
     model_running_analytics_stg_strava__activities --> model_running_analytics_int_runs_with_weather
     model_running_analytics_stg_weather__hourly --> model_running_analytics_int_runs_with_weather
+    seed_running_analytics_hr_bands --> model_running_analytics_int_band_window_samples
+    seed_running_analytics_hr_bands --> model_running_analytics_mart_band_weekly
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_by_temp_band
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_trend
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
@@ -295,13 +317,16 @@ matches the *nearest* observation that actually carries measurements
 matched within 60 minutes of the run's start; training weeks are local
 wall-clock (`week_start_date` = Monday of the local week); metric
 thresholds (the D9 run-validity rules as revised by v1.1, the 45-minute
-long-run definition) are dbt vars, never inline SQL. Layer dependencies
-are directional and machine-checked: marts read core, seeds, and other
-marts (today a single mart-to-mart hop feeds each trend); intermediate
-never reads core. `source()` is a staging-only privilege with one
+long-run definition, the D22 band window and dwell rules) are dbt vars,
+never inline SQL. Layer dependencies are directional and
+machine-checked: marts read core, seeds, and other marts (today a
+single mart-to-mart hop feeds each trend); intermediate never reads
+core, and since v1.4 may read seeds — one deliberate matrix line, added
+for the `hr_bands` sample-grain join and proven against the guard
+before it changed. `source()` is a staging-only privilege with one
 documented exception — `raw_strava.streams`, readable from intermediate
 models only, because stream payloads' only useful transformation is a
-grain change. Both rules are enforced by a manifest-based test
+grain change. All of it is enforced by a manifest-based test
 (`tests/test_dbt_layering.py`), not convention. Every measurement column
 carries an explicit unit suffix, and missing HR/weather stays NULL
 through every layer.
