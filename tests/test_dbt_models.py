@@ -512,9 +512,7 @@ def test_relationships_test_fails_on_orphan_drift_candidate(db):
 
     # Insert AFTER the build and test WITHOUT rebuilding: a rebuild
     # would erase the orphan and a green run would prove nothing.
-    db.execute(
-        "INSERT INTO analytics.fct_drift_candidates (activity_id) VALUES (999999999)"
-    )
+    db.execute("INSERT INTO analytics.fct_drift_candidates (activity_id) VALUES (999999999)")
     db.commit()
 
     selector = "relationships_fct_drift_candidates_activity_id__activity_id__ref_fct_runs_"
@@ -527,3 +525,73 @@ def test_relationships_test_fails_on_orphan_drift_candidate(db):
 
     result = run_dbt("test", "--select", selector)
     assert result.returncode == 0, f"relationships test still failing:\n{result.stdout}"
+
+
+@pytest.mark.integration
+def test_relationships_test_fails_on_orphan_band_candidate(db):
+    # The fct_band_candidates -> fct_runs relationships test, proven red
+    # the same way as the drift one (commit f8c7185): both models descend
+    # from int_run_efficiency, so no raw fixture can produce an orphan —
+    # it must be injected into the built table.
+    drift_run(db, 1, day="2026-06-15")
+    insert_stream(db, 1, samples=steady_stream())
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    # Insert AFTER the build and test WITHOUT rebuilding: a rebuild
+    # would erase the orphan and a green run would prove nothing.
+    db.execute("INSERT INTO analytics.fct_band_candidates (activity_id) VALUES (999999999)")
+    db.commit()
+
+    selector = "relationships_fct_band_candidates_activity_id__activity_id__ref_fct_runs_"
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode != 0, "relationships test should fail on an orphan candidate"
+    assert selector in result.stdout
+
+    db.execute("DELETE FROM analytics.fct_band_candidates WHERE activity_id = 999999999")
+    db.commit()
+
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode == 0, f"relationships test still failing:\n{result.stdout}"
+
+
+@pytest.mark.integration
+def test_band_candidates_exclusive_exhaustive(db):
+    # D22 contract: every band candidate carries EXACTLY ONE of
+    # (>= 1 band segment, exclusion_reason) — mutually exclusive,
+    # jointly exhaustive. Fixtures put data on both sides so neither
+    # direction passes vacuously: an analyzed hour-long run, and a
+    # 25-minute HR run past the fetch gate but with no streams row yet.
+    drift_run(db, 1, day="2026-06-15")
+    insert_stream(db, 1, samples=steady_stream())
+    drift_run(db, 2, day="2026-06-16", moving_time=1500)  # candidate, no streams
+    # Not a candidate: HR run under the 20-minute fetch gate.
+    insert_activity(
+        db, 3, start_latlng=None, average_heartrate=140.0, moving_time=900, elapsed_time=1000
+    )
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    candidates = {
+        row[0]
+        for row in db.execute("SELECT activity_id FROM analytics.fct_band_candidates").fetchall()
+    }
+    assert candidates == {1, 2}  # 3 is under the fetch gate
+
+    violations = db.execute(
+        """
+        SELECT c.activity_id, c.exclusion_reason, coalesce(s.segment_count, 0)
+        FROM analytics.fct_band_candidates c
+        LEFT JOIN (
+            SELECT activity_id, count(*) AS segment_count
+            FROM analytics.fct_run_band_segments
+            GROUP BY activity_id
+        ) s USING (activity_id)
+        WHERE (c.exclusion_reason IS NULL) != (coalesce(s.segment_count, 0) >= 1)
+        """
+    ).fetchall()
+    assert violations == [], f"candidates violating the segments-XOR-reason contract: {violations}"
