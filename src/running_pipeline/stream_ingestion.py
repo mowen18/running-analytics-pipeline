@@ -45,7 +45,7 @@ _ELIGIBLE_SQL = """
       AND (a.payload->>'moving_time')::integer >= %(min_moving_seconds)s
       AND a.start_date_utc >= %(floor)s
       AND (s.activity_id IS NULL OR s.ingestion_status = 'failed')
-    ORDER BY a.start_date_utc
+    ORDER BY a.start_date_utc, a.activity_id
     LIMIT %(max_activities)s
 """
 

@@ -309,7 +309,10 @@ def test_location_hour_unique_key_rejects_duplicates(db):
 @pytest.mark.integration
 def test_extraction_keeps_outdoor_runs_and_excludes_the_rest(db):
     insert_activity(db, 1)  # outdoor Run — kept
-    insert_activity(db, 2, sport_type="TrailRun")  # outdoor TrailRun — kept
+    # Distinct start: sharing activity 1's default timestamp made the
+    # [1, 2, 8] assertion ride on unspecified tie order (the flake the
+    # v1.4 verification session caught) — order now carried by time.
+    insert_activity(db, 2, sport_type="TrailRun", start="2026-06-15T10:47:23Z")  # kept
     insert_activity(db, 3, trainer=True)  # treadmill — excluded
     insert_activity(db, 4, start_latlng=None)  # no coordinates — excluded
     insert_activity(db, 5, sport_type="Walk")  # not a run — excluded

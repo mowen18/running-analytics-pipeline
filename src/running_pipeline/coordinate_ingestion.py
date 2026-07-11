@@ -59,7 +59,7 @@ _CANDIDATES_SQL = """
       AND a.start_date_utc >= %(floor)s
       AND NOT coalesce((a.payload->>'trainer')::boolean, false)
       AND jsonb_array_length(coalesce(a.payload->'start_latlng', '[]'::jsonb)) != 2
-    ORDER BY a.start_date_utc
+    ORDER BY a.start_date_utc, a.activity_id
     LIMIT %(cap)s
 """
 
