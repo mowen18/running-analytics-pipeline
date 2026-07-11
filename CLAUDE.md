@@ -27,6 +27,19 @@
   renders from the temperature_band_range macro (the seed stays the
   sole bounds definition). fct_drift_candidates.activity_id carries a
   relationships test to fct_runs (proven red on an orphan row first).
+- Revision v1.4 is planned (addendum in docs/PROJECT_PLAN.md): the
+  45-min var splits — stream FETCH gate becomes
+  stream_fetch_min_moving_minutes (20); drift candidacy and
+  long_run_eligible keep 45 unchanged. New D22 pace-at-HR-band metric:
+  hr_bands seed (10 bpm, joined by range), int_band_window_samples +
+  int_run_band_assessment (exclusion ladder) → fct_band_candidates
+  (its core projection) + fct_run_band_segments → mart_band_weekly →
+  mart_band_trend; weekly statistic is the median across runs of
+  run-level band medians; trims 5/2 min, window ≥ 10 min, dwell ≥ 5
+  min/band, coverage var reused from drift. One deliberate layer-matrix
+  widening: seeds become allowed parents of intermediate models.
+  Renders inside the Aerobic Efficiency view — D19's three-view cap is
+  NOT amended; allow-list grows by exactly mart_band_trend.
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433

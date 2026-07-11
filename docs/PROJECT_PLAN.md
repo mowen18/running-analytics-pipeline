@@ -767,3 +767,172 @@ centralizes only the null-tolerant range-predicate rendering.
 Call-site-specific conditions (`weather_available`, `not is_trainer`)
 stay at the call sites. Built mart data is byte-identical before and
 after; compiled SQL differs only in whitespace.
+
+# Revision v1.4 — Pace-at-HR-Band Trend (Addendum)
+
+Status: DRAFT — review before committing. Docs-before-code: this
+addendum lands before any implementation session.
+
+## What this revision changes and why
+
+The 45-minute threshold currently carries one deliberate meaning across
+two uses: D15's stream-fetch eligibility gate and the `long_run_eligible`
+flag (core.yml states the alignment explicitly). Runs under 45 minutes
+therefore never receive streams, which starves every sample-grain metric
+— including the new one this revision introduces — for an athlete whose
+runs are mostly shorter.
+
+This revision **splits the fetch gate from the analysis gates**:
+
+- **Stream fetch eligibility (D15 revised v1.4):** running activity ·
+  HR present · moving time ≥ `stream_fetch_min_moving_minutes` (20) ·
+  within historical window · not already loaded. Fetching is now a
+  *data-availability* decision, not a metric-eligibility decision.
+- **Drift candidacy: unchanged.** HR-carrying run ≥ 45 minutes
+  (`long_run_min_moving_minutes`), exactly as revised in v1.1.
+- **`long_run_eligible`: unchanged.** "Long run" keeps its single
+  45-minute meaning.
+
+Three previously-coupled meanings, now three explicit vars/uses. The
+v1.2 lesson applies: this widening is *chosen here*, not absorbed from
+a diff.
+
+## D22 (new) — Pace-at-HR-band trend
+
+**Definition.** Pool valid, moving, post-trim stream samples per run;
+assign each sample an HR band (10 bpm, `hr_bands` seed, joined by
+range — the `temperature_bands` pattern); per run per band compute
+dwell seconds and median velocity; weekly statistic per band = **median
+across contributing runs of the run-level band medians** (D11's
+median-of-runs philosophy: one long run must not dominate a week by
+sample count). 28-day rolling median per band smooths week noise (D13
+pattern; static column names per v1.3).
+
+**Sign of interest:** rising pace (falling min/mi) at the same HR band
+= the observational signal of an improving aerobic base. Observational,
+never causal — same framing discipline as D17.
+
+**Analysis window, in order (mirrors D16's ordering discipline):**
+
+1. Exclude invalid samples (`is_valid_sample`) and non-moving samples.
+2. Trim the first `band_warmup_trim_minutes` (5) of elapsed time —
+   warm-up HR is still climbing, so untrimmed samples pair a too-low
+   HR with full pace and pollute the *low* bands optimistically.
+3. Trim the final `band_cooldown_trim_minutes` (2).
+4. Require ≥ `band_min_window_minutes` (10) of moving time remaining.
+5. Require sample coverage: average gap within the window ≤ the
+   existing drift coverage var (3 s). Reused, not duplicated.
+6. Assign bands; a run contributes to a band only with dwell ≥
+   `band_min_dwell_minutes` (5) — transitions passing through a band
+   must not deposit junk medians.
+
+No pause-share rung: unlike drift's time-based halves, pooling simply
+drops non-moving samples, so pauses cannot bias band medians. The
+omission is deliberate (an unused check is a hole waiting for an
+occupant, inverted).
+
+**Dwell definition.** Each in-window sample contributes
+`least(elapsed_gap_to_previous_sample, coverage_cap_seconds)` seconds
+to its band. The cap (the same 3 s var) prevents recording gaps from
+inflating dwell; sparse recordings fail rung 5 before dwell is trusted.
+
+**Exclusion ladder (deterministic, first failing check, dependency
+order):** streams not yet loaded → streams unavailable from Strava →
+stream fetch failed → required arrays missing → analysis window under
+10 minutes after trimming → insufficient sample coverage → no band
+meets the dwell minimum. Contract test: every candidate carries exactly
+one of (≥1 band segment, exclusion_reason) — mutually exclusive,
+jointly exhaustive.
+
+**Candidate population:** HR-carrying runs ≥ the *fetch* gate
+(20 min). Drift candidacy remains a strict subset by construction.
+
+## Vars (all thresholds are vars, never inline SQL)
+
+| Var | Value | Notes |
+|---|---|---|
+| `stream_fetch_min_moving_minutes` | 20 | NEW — split from the 45-min var; flows into `_ELIGIBLE_SQL` |
+| `band_warmup_trim_minutes` | 5 | Lighter than D16's 10: a 20-min run must survive the trim |
+| `band_cooldown_trim_minutes` | 2 | |
+| `band_min_window_minutes` | 10 | 20-min run − 5 − 2 = 13 min ≥ 10 |
+| `band_min_dwell_minutes` | 5 | Per run per band, to contribute a median |
+| (reused) drift coverage max avg gap | 3 s | One mechanism, two consumers |
+| (reused) D12 weekly sufficiency | ≥ 2 | Contributing runs per week × band |
+
+## Models
+
+| Layer | Model | Grain | Key contents |
+|---|---|---|---|
+| Seed | `hr_bands` | one row per band | 10 bpm bands, defined once, joined by range (range predicate via macro, per the v1.3 `temperature_band_range` precedent) |
+| Intermediate | `int_band_window_samples` | run × sample | valid + moving + in-window samples with band assigned and per-sample dwell contribution |
+| Intermediate | `int_run_band_assessment` | run | window stats + the exclusion ladder (single encoding), per candidate — the shared verdict both core band models consume, mirroring how `int_run_efficiency` carries the validity ladder |
+| Core | `fct_band_candidates` | run | explicit-column core projection of `int_run_band_assessment` (the `fct_runs` ← `int_run_efficiency` pattern); `relationships` test to `fct_runs` (proven red on an orphan first, per v1.3) |
+| Core | `fct_run_band_segments` | run × band | dwell seconds, sample count, median velocity/pace — analyzed runs only |
+| Mart | `mart_band_weekly` | week × band | weekly median pace, contributing-run count, avg temp (context), `is_sufficient` |
+| Mart | `mart_band_trend` | week × band | 28-day rolling median + rolling run count (static names); the sanctioned one-hop mart-to-mart edge |
+| Mart | `mart_run_quality` | (existing) | gains `band_exclusion_reason`, the same route drift reasons take to the dashboard |
+
+Layering: `int_run_band_assessment` reads `int_run_efficiency`,
+`int_run_stream_samples`, `int_run_stream_state`, and
+`int_band_window_samples` — the same sanctioned parents as
+`fct_drift_candidates`, plus the new sample-grain intermediate.
+`fct_band_candidates` is its explicit-column core projection and
+`fct_run_band_segments` reads `int_band_window_samples` +
+`int_run_band_assessment`, so the analyzed-only filter needs no
+core → core edge. One layer-matrix permission IS required and is
+chosen here, not absorbed from a diff (the v1.2 lesson, applied
+deliberately): band assignment joins the `hr_bands` seed at sample
+grain, so seeds become allowed parents of INTERMEDIATE models. The
+guard is proven red on that edge before the matrix line changes; no
+other matrix change is permitted.
+
+## Dashboard (D19: clarified, not amended)
+
+The band trend renders as a section **inside the Aerobic Efficiency
+view**. It is the same analytical question with intensity controlled by
+construction, and the three-view maximum holds. The app's pinned
+allow-list grows by exactly one name (`mart_band_trend` — the weekly
+statistics travel inside it, per the existing trend-mart interface);
+the allow-list test and its negative case (a core table is refused)
+update accordingly, red-first.
+
+Rendering conventions carry over: statistic next to its sample count,
+insufficient week × band points excluded from trend lines but visible
+in tables, definition and sign convention stated on the view itself.
+
+## Ingestion and backfill
+
+The only ingestion change is threading `stream_fetch_min_moving_minutes`
+into `_ELIGIBLE_SQL`'s `min_moving_seconds`. Newly eligible activities
+have no streams row; absent-row-means-not-attempted makes the backfill
+automatic across successive `make sync-streams` invocations (batch of
+50, rate-limit stop contract unchanged).
+
+**Sequencing rule:** the gate default changes only *after* the model
+changes are proven output-invariant on existing data. Code invariance
+and data growth are separate events, verified separately.
+
+## Acceptance criteria
+
+1. Existing marts byte-identical after the model changes, before the
+   gate change — bidirectional `EXCEPT ALL`, row counts, checksum;
+   `mart_run_quality` compared on its pre-existing column set (the new
+   column is additive).
+2. Drift candidacy and `long_run_eligible` provably unchanged (same
+   invariance run covers this).
+3. Band medians validated by hand-checkable synthetic fixtures:
+   constant 3.0 m/s, HR stepping 135 → 145 at the window midpoint →
+   two bands, equal dwell, median velocity 3.0 in each; poisoned
+   warm-up/cool-down so a trimming break visibly shifts the numbers.
+4. One fixture per reachable exclusion rung, including a
+   dwell-minimum fixture (2 minutes in a band → band absent).
+5. Exclusivity/exhaustiveness contract test on `fct_band_candidates`.
+6. Layering guard passes with exactly one deliberate widening — seeds
+   become allowed parents of intermediate models (the `hr_bands`
+   sample-grain join) — proven red before the matrix line changes; no
+   other matrix change.
+7. Allow-list test updated with its negative case intact, proven red
+   before the app change.
+8. Manual inspection of several real run-band segments for
+   plausibility — deferred until the backfill lands data (the D16
+   criterion-6 precedent).
