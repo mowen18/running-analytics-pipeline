@@ -161,6 +161,10 @@ def test_every_view_renders_with_populated_marts(db):  # noqa: F811
     drift = render("Cardiac drift")
     # Sign convention must be stated on the view itself (D17).
     assert any("positive = " in c.value for c in drift.caption)
-    # The eligibility table renders alongside the weekly trend table.
+    # The eligibility and band-trend tables render alongside the weekly
+    # trend table (v1.4: the band section lives INSIDE this view —
+    # D19's three-view cap is not amended).
     efficiency = render("Aerobic efficiency")
-    assert len(efficiency.dataframe) >= 2
+    assert len(efficiency.dataframe) >= 3
+    # The D22 sign convention must be stated on the view itself too.
+    assert any("falling min/mi" in c.value for c in efficiency.caption)
