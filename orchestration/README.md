@@ -46,6 +46,25 @@ Overrides:
   version and its matching constraints branch (default floats to
   `constraints-latest`).
 
+## Operational gotchas (learned the hard way)
+
+- **Bare `airflow` CLI calls need the full env block** — the Make
+  targets set it via `$(AIRFLOW_ENV)`, but a hand-typed command does
+  not. Copy-paste, run from the repo root:
+
+  ```bash
+  PATH="$HOME/.venvs/airflow/bin:$PATH" AIRFLOW_HOME="$HOME/airflow" \
+  AIRFLOW__CORE__DAGS_FOLDER="$(pwd)/orchestration/dags" \
+  AIRFLOW__CORE__LOAD_EXAMPLES=False airflow <subcommand>
+  ```
+
+  Without `LOAD_EXAMPLES=False`, a parse (e.g. `dags reserialize`)
+  pollutes the metadata DB with Airflow's example DAGs.
+- **`airflow dags list` / `list-import-errors` read the metadata DB,
+  not the DAGs folder.** When no dag-processor is running (standalone
+  stopped), run `airflow dags reserialize` first — otherwise a new or
+  edited DAG file is invisible to both commands.
+
 ## The DAG: `running_pipeline`
 
 Mirrors `make all` as a linear chain — sync_activities →

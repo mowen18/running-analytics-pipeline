@@ -12,6 +12,16 @@ AIRFLOW_HOME_DIR := $(HOME)/airflow
 AIRFLOW_PYTHON   ?= python3.13
 AIRFLOW_VERSION  ?=
 
+# Every airflow-* recipe that runs the airflow binary MUST be prefixed
+# with $(AIRFLOW_ENV): standalone respawns components as bare `airflow`
+# via PATH, and bare CLI calls without LOAD_EXAMPLES=False pollute the
+# metadata DB with example DAGs. (airflow-install is exempt — it only
+# creates the venv and runs pip.)
+AIRFLOW_ENV := PATH=$(AIRFLOW_VENV)/bin:$$PATH \
+	AIRFLOW_HOME=$(AIRFLOW_HOME_DIR) \
+	AIRFLOW__CORE__DAGS_FOLDER=$(CURDIR)/orchestration/dags \
+	AIRFLOW__CORE__LOAD_EXAMPLES=False
+
 .PHONY: help up down bootstrap athlete authorize sync-activities reconcile \
 	backfill-coordinates sync-weather reconcile-weather sync-streams \
 	dbt-profile dbt-build dbt-test dbt-freshness dbt-docs dbt-dag app all \
@@ -92,11 +102,7 @@ airflow-install:   ## create ~/.venvs/airflow + apache-airflow (official constra
 		--constraint "https://raw.githubusercontent.com/apache/airflow/constraints-$(if $(AIRFLOW_VERSION),$(AIRFLOW_VERSION),latest)/constraints-$$PYVER.txt"
 
 airflow-start:     ## airflow standalone (AIRFLOW_HOME=~/airflow, DAGs from orchestration/dags)
-	PATH=$(AIRFLOW_VENV)/bin:$$PATH \
-	AIRFLOW_HOME=$(AIRFLOW_HOME_DIR) \
-	AIRFLOW__CORE__DAGS_FOLDER=$(CURDIR)/orchestration/dags \
-	AIRFLOW__CORE__LOAD_EXAMPLES=False \
-	$(AIRFLOW_VENV)/bin/airflow standalone
+	$(AIRFLOW_ENV) $(AIRFLOW_VENV)/bin/airflow standalone
 
 all: sync-activities backfill-coordinates sync-weather sync-streams dbt-build  ## full refresh: all syncs + dbt
 
