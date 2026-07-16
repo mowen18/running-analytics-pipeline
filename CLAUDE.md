@@ -52,9 +52,11 @@
 - Current phase: Airflow adoption (v1.5). The addendum
   (docs/decisions/v1.5-airflow-addendum.md, revising D18) is adopted
   and scaffolding is in (commit 4f04ba0): Airflow 3.3.0 installed at
-  ~/.venvs/airflow on Python 3.13.14; orchestration/dags/ exists and
-  is empty — no DAG code yet. Airflow is a THIN scheduling and
-  observability layer only; see the scope constraints below.
+  ~/.venvs/airflow on Python 3.13.14. The running_pipeline DAG
+  (orchestration/dags/running_pipeline_dag.py) mirrors `make all` as
+  a linear chain, daily 06:00 America/Chicago. Airflow is a THIN
+  scheduling and observability layer only; see the scope constraints
+  below.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and
@@ -70,6 +72,10 @@
   dependencies.
 - All DAG code must use the Airflow 3 API — schedule=, no
   schedule_interval, no execution_date.
+- Exit-3 policy (addendum): CLI exit 3 = clean rate-limit stop →
+  task SKIPPED (skip_on_exit_code=3), downstream none_failed; sync
+  tasks call the CLI directly because make masks recipe exit codes —
+  a narrow, documented amendment to constraint (c)'s letter.
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433

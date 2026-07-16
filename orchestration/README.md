@@ -10,9 +10,9 @@ execution layer.
 
 ```text
 orchestration/
-└── dags/        # AIRFLOW__CORE__DAGS_FOLDER points here.
-                 # Empty until the DAG implementation session;
-                 # .gitkeep holds the directory in git.
+└── dags/
+    └── running_pipeline_dag.py   # the one pipeline DAG (below);
+                                  # AIRFLOW__CORE__DAGS_FOLDER points here
 ```
 
 Everything else Airflow needs lives OUTSIDE the repo, by design
@@ -45,6 +45,27 @@ Overrides:
 - `make airflow-install AIRFLOW_VERSION=3.3.0` — pin the Airflow
   version and its matching constraints branch (default floats to
   `constraints-latest`).
+
+## The DAG: `running_pipeline`
+
+Mirrors `make all` as a linear chain — sync_activities →
+backfill_coordinates → sync_weather → sync_streams → dbt_build. Daily
+at 06:00 America/Chicago; the cron and timezone are the
+`SCHEDULE_CRON` / `SCHEDULE_TZ` constants at the top of the DAG file
+(one-line changes). `catchup=False`, no templated date windows
+(constraint (b) — the 14-day overlap owns incremental correctness),
+`max_active_runs=1`.
+
+Exit-code-3 behavior (policy in the addendum): the CLI exits 3 on a
+clean rate-limit/budget stop with committed work kept, so those tasks
+are marked SKIPPED (`skip_on_exit_code=3`) and downstream tasks use
+`trigger_rule="none_failed"` — dbt_build still runs on already-ingested
+data, while a genuine failure (exit 1) halts the chain. Because GNU
+make masks recipe exit codes (any failure → make exits 2), the four
+sync tasks invoke `.venv/bin/running-pipeline <cmd>` directly — the
+verbatim one-line body of each make recipe, cwd = repo root — while
+dbt_build stays behind `make dbt-build` (real recipe logic, no exit-3
+contract).
 
 ## Constraints (addendum, verbatim)
 
