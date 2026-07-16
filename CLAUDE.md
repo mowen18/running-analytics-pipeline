@@ -49,14 +49,14 @@
   it). Existing marts proven byte-identical pre-gate-change; band data
   for 20–45 min runs arrives only as post-merge `make sync-streams`
   backfill drains ('streams not yet loaded' until then).
-- Current phase: Airflow adoption (v1.5). The addendum
-  (docs/decisions/v1.5-airflow-addendum.md, revising D18) is adopted
-  and scaffolding is in (commit 4f04ba0): Airflow 3.3.0 installed at
-  ~/.venvs/airflow on Python 3.13.14. The running_pipeline DAG
-  (orchestration/dags/running_pipeline_dag.py) mirrors `make all` as
-  a linear chain, daily 06:00 America/Chicago. Airflow is a THIN
-  scheduling and observability layer only; see the scope constraints
-  below.
+- Current phase: Airflow adoption (v1.5) complete — pending merge to
+  main. Addendum (docs/decisions/v1.5-airflow-addendum.md, revising
+  D18) adopted; Airflow 3.3.0 at ~/.venvs/airflow on Python 3.13.14;
+  the running_pipeline DAG (orchestration/dags/running_pipeline_dag.py)
+  mirrors `make all` daily 06:00 America/Chicago, proven on the real
+  scheduler path (10/10 task successes, idempotent no-op counts).
+  Airflow is a THIN scheduling and observability layer only; see the
+  scope constraints below.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and

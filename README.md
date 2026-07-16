@@ -114,6 +114,21 @@ make lint             # ruff check
 make format           # ruff format
 ```
 
+## Orchestration
+
+The Makefile and CLI above are the pipeline's only execution layer.
+Apache Airflow (v1.5, revising D18) sits on top as a thin scheduling
+and observability layer: it owns no state and runs the same commands
+an operator would type. It lives entirely outside the project —
+`make airflow-install` builds its own venv at `~/.venvs/airflow`, and
+`make airflow-start` runs `airflow standalone`
+(`AIRFLOW_HOME=~/airflow`). The `running_pipeline` DAG mirrors
+`make all` daily at 06:00 America/Chicago; a clean rate-limit stop
+(CLI exit 3) marks the task SKIPPED and the chain still builds marts
+from already-ingested data, while genuine failure halts it. Details,
+constraints, and operational notes: `orchestration/README.md` and
+`docs/decisions/v1.5-airflow-addendum.md`.
+
 ## Warehouse layout
 
 Five schemas (decision D3): `raw_strava`, `raw_weather`, `staging`,

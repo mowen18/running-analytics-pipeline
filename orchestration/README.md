@@ -84,7 +84,12 @@ make masks recipe exit codes (any failure → make exits 2), the four
 sync tasks invoke `.venv/bin/running-pipeline <cmd>` directly — the
 verbatim one-line body of each make recipe, cwd = repo root — while
 dbt_build stays behind `make dbt-build` (real recipe logic, no exit-3
-contract).
+contract). Command parity is enforced by
+`tests/test_dag_parity.py`.
+
+Honesty note: the exit-3 SKIPPED path is designed and guard-tested,
+but has not yet been observed live — no rate-limit stop has occurred
+in a real scheduler run as of 2026-07-16.
 
 ## Constraints (addendum, verbatim)
 
