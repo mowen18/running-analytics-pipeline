@@ -50,10 +50,11 @@
   for 20–45 min runs arrives only as post-merge `make sync-streams`
   backfill drains ('streams not yet loaded' until then).
 - Current phase: Airflow adoption (v1.5). The addendum
-  (docs/decisions/v1.5-airflow-addendum.md, revising D18) is adopted;
-  implementation has not started — no DAG code written, no Airflow
-  installed. Airflow will be a THIN scheduling and observability
-  layer only; see the scope constraints below.
+  (docs/decisions/v1.5-airflow-addendum.md, revising D18) is adopted
+  and scaffolding is in (commit 4f04ba0): Airflow 3.3.0 installed at
+  ~/.venvs/airflow on Python 3.13.14; orchestration/dags/ exists and
+  is empty — no DAG code yet. Airflow is a THIN scheduling and
+  observability layer only; see the scope constraints below.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and
@@ -67,6 +68,8 @@
   Celery/Redis/Docker for Airflow in this release.
 - (e) Airflow lives in its own venv, never in the project's
   dependencies.
+- All DAG code must use the Airflow 3 API — schedule=, no
+  schedule_interval, no execution_date.
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
@@ -109,6 +112,9 @@
   generate_schema_name override — do not remove it)
 - App:     `make app` (Streamlit, three views per D19) / `make all`
   (every sync + dbt build)
+- Airflow: `make airflow-install` (separate venv at ~/.venvs/airflow —
+  never the project venv) / `make airflow-start` (airflow standalone,
+  AIRFLOW_HOME=~/airflow, DAGs read from orchestration/dags)
 - Rotated Strava tokens live in `.secrets/strava_tokens.json` (gitignored,
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.
