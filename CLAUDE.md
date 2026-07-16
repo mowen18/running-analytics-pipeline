@@ -115,11 +115,10 @@
 - Airflow: `make airflow-install` (separate venv at ~/.venvs/airflow —
   never the project venv) / `make airflow-start` (airflow standalone,
   AIRFLOW_HOME=~/airflow, DAGs read from orchestration/dags)
-- Airflow standalone first-start FAILING — see notes (2026-07-16:
-  standalone spawns components as bare `airflow` via PATH, and the
-  target calls the venv binary by absolute path without venv bin on
-  PATH → FileNotFoundError ×4, parent polls readiness forever;
-  `airflow db migrate` alone is fine, ~1 s)
+- Airflow standalone first-start verified (2026-07-16, PATH fix in
+  airflow-start: standalone respawns its components as bare `airflow`
+  resolved via PATH, so the recipe must prepend $(AIRFLOW_VENV)/bin —
+  absolute-path invocation alone is not enough)
 - Rotated Strava tokens live in `.secrets/strava_tokens.json` (gitignored,
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.

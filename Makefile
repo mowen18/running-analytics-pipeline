@@ -92,6 +92,7 @@ airflow-install:   ## create ~/.venvs/airflow + apache-airflow (official constra
 		--constraint "https://raw.githubusercontent.com/apache/airflow/constraints-$(if $(AIRFLOW_VERSION),$(AIRFLOW_VERSION),latest)/constraints-$$PYVER.txt"
 
 airflow-start:     ## airflow standalone (AIRFLOW_HOME=~/airflow, DAGs from orchestration/dags)
+	PATH=$(AIRFLOW_VENV)/bin:$$PATH \
 	AIRFLOW_HOME=$(AIRFLOW_HOME_DIR) \
 	AIRFLOW__CORE__DAGS_FOLDER=$(CURDIR)/orchestration/dags \
 	AIRFLOW__CORE__LOAD_EXAMPLES=False \

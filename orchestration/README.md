@@ -31,7 +31,10 @@ make airflow-install   # one-time: create ~/.venvs/airflow and install
                        # file matching that venv's Python version
 make airflow-start     # run `airflow standalone` with AIRFLOW_HOME and
                        # the DAGs folder above (repo path derived, not
-                       # hardcoded); example DAGs disabled
+                       # hardcoded); example DAGs disabled. The recipe
+                       # prepends ~/.venvs/airflow/bin to PATH because
+                       # standalone respawns its components as bare
+                       # `airflow` resolved via PATH
 ```
 
 Overrides:
