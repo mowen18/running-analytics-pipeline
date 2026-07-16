@@ -48,3 +48,11 @@ Thumbs.db
 
 # dbt's machine-local anonymous-id cookie
 dbt/.user.yml
+
+# ── Airflow (v1.5) — venv + AIRFLOW_HOME live outside the repo; guards ─
+airflow.db
+airflow.cfg
+webserver_config.py
+standalone_admin_password.txt
+simple_auth_manager_passwords.json.generated
+airflow-webserver.pid

@@ -6,10 +6,16 @@ VENV := .venv/bin
 # the committed example; .env supplies connection values via env_var().
 DBT = cd dbt && set -a && . ../.env && set +a && ../$(VENV)/dbt
 
+# ── Airflow (v1.5): thin layer, own venv — never in project deps ──────
+AIRFLOW_VENV     := $(HOME)/.venvs/airflow
+AIRFLOW_HOME_DIR := $(HOME)/airflow
+AIRFLOW_PYTHON   ?= python3.13
+AIRFLOW_VERSION  ?=
+
 .PHONY: help up down bootstrap athlete authorize sync-activities reconcile \
 	backfill-coordinates sync-weather reconcile-weather sync-streams \
 	dbt-profile dbt-build dbt-test dbt-freshness dbt-docs dbt-dag app all \
-	test lint format
+	test lint format airflow-install airflow-start
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | sed 's/:.*//' | sort
@@ -72,6 +78,24 @@ dbt-dag: dbt-profile       ## regenerate manifest and embed the dbt DAG in READM
 
 app:           ## launch the Streamlit dashboard (three views, marts only)
 	$(VENV)/streamlit run app/streamlit_app.py
+
+airflow-install:   ## create ~/.venvs/airflow + apache-airflow (official constraints)
+	@command -v $(AIRFLOW_PYTHON) >/dev/null 2>&1 || { \
+		echo "error: $(AIRFLOW_PYTHON) not found on PATH;" \
+		     "override with: make airflow-install AIRFLOW_PYTHON=python3.x"; \
+		exit 1; }
+	test -d $(AIRFLOW_VENV) || $(AIRFLOW_PYTHON) -m venv $(AIRFLOW_VENV)
+	PYVER=$$($(AIRFLOW_VENV)/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")') && \
+	$(AIRFLOW_VENV)/bin/pip install --upgrade pip && \
+	$(AIRFLOW_VENV)/bin/pip install \
+		"apache-airflow$(if $(AIRFLOW_VERSION),==$(AIRFLOW_VERSION))" \
+		--constraint "https://raw.githubusercontent.com/apache/airflow/constraints-$(if $(AIRFLOW_VERSION),$(AIRFLOW_VERSION),latest)/constraints-$$PYVER.txt"
+
+airflow-start:     ## airflow standalone (AIRFLOW_HOME=~/airflow, DAGs from orchestration/dags)
+	AIRFLOW_HOME=$(AIRFLOW_HOME_DIR) \
+	AIRFLOW__CORE__DAGS_FOLDER=$(CURDIR)/orchestration/dags \
+	AIRFLOW__CORE__LOAD_EXAMPLES=False \
+	$(AIRFLOW_VENV)/bin/airflow standalone
 
 all: sync-activities backfill-coordinates sync-weather sync-streams dbt-build  ## full refresh: all syncs + dbt
 
