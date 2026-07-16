@@ -949,3 +949,19 @@ and data growth are separate events, verified separately.
    exclusion reasons on real data; owner signed off on the two
    flagged nuances (early-run dominant-band/avg-HR gaps, >20 min/mi
    medians in low bands — run/walk material, as designed).
+
+# Revision v1.5 — 2026-07-16 — Airflow as a thin scheduling and observability layer (Addendum to D18)
+
+Recorded in `docs/decisions/v1.5-airflow-addendum.md` — the first
+revision kept under `docs/decisions/` rather than appended here.
+Summary: D18's Makefile + CLI remains the sole execution layer;
+Airflow is adopted post-MVP as a THIN scheduling and observability
+layer under five constraints — (a) Airflow owns no state (watermarks,
+per-item status rows, destination-as-cache stay the pipeline's);
+(b) catchup=False and no templated date windows (Strava filters by
+activity start date; interval windows would reintroduce the
+late-upload gap the 14-day overlap already solves); (c) tasks invoke
+existing Make targets unchanged — no pipeline code changes;
+(d) LocalExecutor-or-simpler, SQLite metadata DB, no
+Celery/Redis/Docker for Airflow in this release; (e) Airflow lives in
+its own venv, never in the project's dependencies.

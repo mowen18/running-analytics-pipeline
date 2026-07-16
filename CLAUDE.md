@@ -1,9 +1,11 @@
 # CLAUDE.md
 
 ## Source of truth
-- The full spec is docs/PROJECT_PLAN.md. Read it before starting work.
-- Decisions D1–D21 in the plan are locked. If a task conflicts with
-  one, stop and ask — do not silently deviate.
+- The full spec is docs/PROJECT_PLAN.md plus revision addendums in
+  docs/decisions/ (v1.5 onward). Read them before starting work.
+- Decisions D1–D22 in the plan are locked (D18 as revised by the v1.5
+  addendum). If a task conflicts with one, stop and ask — do not
+  silently deviate.
 
 ## Current status
 - Revision v1.1 is implemented: efficiency aggregates cover every run
@@ -47,6 +49,24 @@
   it). Existing marts proven byte-identical pre-gate-change; band data
   for 20–45 min runs arrives only as post-merge `make sync-streams`
   backfill drains ('streams not yet loaded' until then).
+- Current phase: Airflow adoption (v1.5). The addendum
+  (docs/decisions/v1.5-airflow-addendum.md, revising D18) is adopted;
+  implementation has not started — no DAG code written, no Airflow
+  installed. Airflow will be a THIN scheduling and observability
+  layer only; see the scope constraints below.
+
+## Scope constraints — Airflow adoption (v1.5)
+- (a) Airflow owns no state — watermarks, per-item status rows, and
+  destination-as-cache remain the pipeline's.
+- (b) catchup=False and no templated date windows, because Strava
+  filters by activity start date and interval-based windows would
+  reintroduce the late-upload gap the 14-day overlap already solves.
+- (c) tasks invoke existing Make targets unchanged — no pipeline code
+  changes.
+- (d) LocalExecutor-or-simpler, SQLite metadata DB, no
+  Celery/Redis/Docker for Airflow in this release.
+- (e) Airflow lives in its own venv, never in the project's
+  dependencies.
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
