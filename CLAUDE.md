@@ -1,9 +1,11 @@
 # CLAUDE.md
 
 ## Source of truth
-- The full spec is docs/PROJECT_PLAN.md. Read it before starting work.
-- Decisions D1–D21 in the plan are locked. If a task conflicts with
-  one, stop and ask — do not silently deviate.
+- The full spec is docs/PROJECT_PLAN.md plus revision addendums in
+  docs/decisions/ (v1.5 onward). Read them before starting work.
+- Decisions D1–D22 in the plan are locked (D18 as revised by the v1.5
+  addendum). If a task conflicts with one, stop and ask — do not
+  silently deviate.
 
 ## Current status
 - Revision v1.1 is implemented: efficiency aggregates cover every run
@@ -47,6 +49,33 @@
   it). Existing marts proven byte-identical pre-gate-change; band data
   for 20–45 min runs arrives only as post-merge `make sync-streams`
   backfill drains ('streams not yet loaded' until then).
+- Current phase: Airflow adoption (v1.5) complete — pending merge to
+  main. Addendum (docs/decisions/v1.5-airflow-addendum.md, revising
+  D18) adopted; Airflow 3.3.0 at ~/.venvs/airflow on Python 3.13.14;
+  the running_pipeline DAG (orchestration/dags/running_pipeline_dag.py)
+  mirrors `make all` daily 06:00 America/Chicago, proven on the real
+  scheduler path (10/10 task successes, idempotent no-op counts).
+  Airflow is a THIN scheduling and observability layer only; see the
+  scope constraints below.
+
+## Scope constraints — Airflow adoption (v1.5)
+- (a) Airflow owns no state — watermarks, per-item status rows, and
+  destination-as-cache remain the pipeline's.
+- (b) catchup=False and no templated date windows, because Strava
+  filters by activity start date and interval-based windows would
+  reintroduce the late-upload gap the 14-day overlap already solves.
+- (c) tasks invoke existing Make targets unchanged — no pipeline code
+  changes.
+- (d) LocalExecutor-or-simpler, SQLite metadata DB, no
+  Celery/Redis/Docker for Airflow in this release.
+- (e) Airflow lives in its own venv, never in the project's
+  dependencies.
+- All DAG code must use the Airflow 3 API — schedule=, no
+  schedule_interval, no execution_date.
+- Exit-3 policy (addendum): CLI exit 3 = clean rate-limit stop →
+  task SKIPPED (skip_on_exit_code=3), downstream none_failed; sync
+  tasks call the CLI directly because make masks recipe exit codes —
+  a narrow, documented amendment to constraint (c)'s letter.
 
 ## Conventions
 - Postgres: running_analytics_db / running_user / host port 5433
@@ -89,6 +118,13 @@
   generate_schema_name override — do not remove it)
 - App:     `make app` (Streamlit, three views per D19) / `make all`
   (every sync + dbt build)
+- Airflow: `make airflow-install` (separate venv at ~/.venvs/airflow —
+  never the project venv) / `make airflow-start` (airflow standalone,
+  AIRFLOW_HOME=~/airflow, DAGs read from orchestration/dags)
+- Airflow standalone first-start verified (2026-07-16, PATH fix in
+  airflow-start: standalone respawns its components as bare `airflow`
+  resolved via PATH, so the recipe must prepend $(AIRFLOW_VENV)/bin —
+  absolute-path invocation alone is not enough)
 - Rotated Strava tokens live in `.secrets/strava_tokens.json` (gitignored,
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.
