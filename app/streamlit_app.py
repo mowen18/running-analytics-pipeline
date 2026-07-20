@@ -55,7 +55,9 @@ def week_axis(week_dates) -> alt.Axis:
 # the D19 "marts only" rule made mechanical; tests/test_app.py pins its
 # contents and asserts everything off the list is refused.
 # mart_band_weekly is deliberately absent: the weekly band statistics
-# travel inside mart_band_trend (v1.4 — the list grows by exactly one).
+# travel inside mart_band_trend (v1.4); mart_run_band_segments is the
+# band chart's run-level scatter (v1.6). Each revision grows the list
+# by exactly one name, proven red first.
 ANALYTICS_TABLES = (
     "mart_weekly_training",
     "mart_efficiency_trend",
@@ -64,6 +66,7 @@ ANALYTICS_TABLES = (
     "mart_run_drift",
     "mart_drift_trend",
     "mart_band_trend",
+    "mart_run_band_segments",
 )
 
 OBSERVATIONAL_NOTE = (
@@ -318,21 +321,27 @@ def efficiency_view():
 
     st.subheader("Pace at heart-rate band")
     st.caption(
-        "Median pace across runs at the same 10-bpm heart-rate band: stream "
-        "samples pooled after a 5-minute warm-up and 2-minute cool-down trim, "
-        "a run counts in a band only with ≥ 5 minutes there, weekly point = "
-        "median of per-run band medians (D11), 28-day rolling median on top. "
+        "Pace at the same 10-bpm heart-rate band, one point per run per "
+        "band: stream samples pooled after a 5-minute warm-up and 2-minute "
+        "cool-down trim, a run counts in a band only with ≥ 5 minutes "
+        "there, each point = that run's median pace in the band (D11 "
+        "medians end to end), 28-day rolling median on top. "
         "RISING pace — falling min/mi — at the same band is the observational "
         "signal of an improving aerobic base (D22)."
     )
     band_trend = load("mart_band_trend")
     # astype(bool): same psycopg object-dtype guard as the efficiency mask.
-    band_points = band_trend.dropna(subset=["median_pace_min_per_mi"]).copy()
-    band_points["is_sufficient"] = band_points["is_sufficient"].astype(bool)
-    band_sufficient = band_points[band_points["is_sufficient"]].dropna(
+    band_trend = band_trend.copy()
+    band_trend["is_sufficient"] = band_trend["is_sufficient"].astype(bool)
+    band_sufficient = band_trend[band_trend["is_sufficient"]].dropna(
         subset=["rolling_median_pace_min_per_mi"]
     )
-    if band_points.empty:
+    run_segments = load("mart_run_band_segments")
+    # Empty-state on the PRE-filter frame: the weekly marts aggregate
+    # these rows, so run rows exist iff weekly rows exist — and keying
+    # on the post-filter frame would show this backfill message when
+    # the user merely deselects every band.
+    if run_segments.empty:
         st.info(
             "No band data yet: no run has an HR band with the required "
             "5 minutes of dwell. Runs of 20–45 minutes gain streams as the "
@@ -343,68 +352,58 @@ def efficiency_view():
         # Band filter: every band present in the data, low->high HR.
         # Sparse bands start deselected so the y-axis fits the bands
         # that carry the trend; nothing is hidden for good — any band
-        # can be re-selected.
-        band_order = band_points.sort_values("band_sort_order")["band_label"].unique().tolist()
-        band_totals = band_points.groupby("band_label")["contributing_run_count"].sum()
+        # can be re-selected. Options and defaults come from the weekly
+        # frame, whose contributing_run_count totals the runs per band.
+        band_order = band_trend.sort_values("band_sort_order")["band_label"].unique().tolist()
+        band_totals = band_trend.groupby("band_label")["contributing_run_count"].sum()
         default_bands = [
             label for label in band_order if band_totals[label] >= DEFAULT_BAND_MIN_TOTAL_RUNS
         ] or band_order  # every band sparse: show all rather than a blank chart
         selected_bands = st.multiselect("HR bands", options=band_order, default=default_bands)
-        band_points = band_points[band_points["band_label"].isin(selected_bands)]
+        run_selected = run_segments[run_segments["band_label"].isin(selected_bands)]
         band_sufficient = band_sufficient[band_sufficient["band_label"].isin(selected_bands)]
 
-        axis = week_axis(band_points["week_start_date"])
+        # Monday ticks from the scatter's weeks (a superset of the
+        # sufficient line's weeks); the SAME axis and title go to both
+        # layers, or Vega-Lite concatenates the merged axis titles.
+        axis = week_axis(run_selected["week_start_date"])
         # reverse=True: pace improves DOWNWARD in min/mi, so the
         # reversed axis makes an improving aerobic base read as
         # an upward trend — the caption states the convention. No fixed
         # domain: the axis fits whatever bands are selected.
         pace_y_scale = alt.Scale(zero=False, nice=True, reverse=True)
-        # Ordered low->high HR bands on the ordinal blue ramp,
-        # same philosophy as the temperature bands.
+        # Ordered low->high HR bands on the ordinal blue ramp, same
+        # philosophy as the temperature bands — clamped away from the
+        # near-white end so FAINT scatter points in the lowest bands
+        # stay visible (the washed-out-ramp lesson, applied to hue).
         band_color = alt.Color(
             "band_label:N",
             sort=alt.EncodingSortField(field="band_sort_order", op="min"),
-            scale=alt.Scale(scheme="blues"),
+            scale=alt.Scale(scheme=alt.SchemeParams(name="blues", extent=[0.35, 1])),
             title="HR band",
         )
-        # Every week x band weekly median, sufficient or not: weeks under
-        # the D12 threshold render as smaller HOLLOW rings at full
-        # opacity (reduced opacity washed out the light end of the blue
-        # ramp) — driven by is_sufficient, never by dates. On unfilled
-        # points the color channel strokes the ring; the fill condition
-        # solidifies sufficient weeks only.
-        weekly_points = (
-            alt.Chart(band_points)
-            .mark_point()
+        # One faint point per run per band (v1.6): the run's median
+        # pace in that band, on the run's own date. Weekly medians stay
+        # in the table below — on the chart they duplicated these
+        # points at current data volume.
+        run_points = (
+            alt.Chart(run_selected)
+            .mark_circle(size=40, opacity=0.5)
             .encode(
-                x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+                x=alt.X(
+                    "start_date_local:T", title="training week", axis=axis, scale=TIME_X_SCALE
+                ),
                 y=alt.Y(
                     "median_pace_min_per_mi:Q",
                     title="min per mile (up = faster)",
                     scale=pace_y_scale,
                 ),
                 color=band_color,
-                fill=alt.condition(
-                    alt.datum.is_sufficient,
-                    alt.Fill(
-                        "band_label:N",
-                        sort=alt.EncodingSortField(field="band_sort_order", op="min"),
-                        scale=alt.Scale(scheme="blues"),
-                        legend=None,  # the color channel already carries the legend
-                    ),
-                    alt.value("transparent"),
-                ),
-                size=alt.condition(alt.datum.is_sufficient, alt.value(64), alt.value(26)),
-                opacity=alt.value(0.9),
                 tooltip=[
-                    alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
+                    alt.Tooltip("start_date_local:T", title="run", format="%b %d"),
                     alt.Tooltip("band_label:N", title="band"),
-                    alt.Tooltip("median_pace_min_per_mi:Q", title="weekly median", format=".2f"),
-                    alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
-                    alt.Tooltip(
-                        "rolling_median_pace_min_per_mi:Q", title="28-day median", format=".2f"
-                    ),
-                    alt.Tooltip("rolling_band_run_count:Q", title="runs in window (n)"),
+                    alt.Tooltip("median_pace_min_per_mi:Q", title="run band median", format=".2f"),
+                    alt.Tooltip("dwell_min:Q", title="minutes in band", format=".1f"),
                 ],
             )
         )
@@ -432,15 +431,15 @@ def efficiency_view():
             )
         )
         st.altair_chart(
-            themed(alt.layer(weekly_points, band_lines).properties(height=320)),
+            themed(alt.layer(run_points, band_lines).properties(height=320)),
             use_container_width=True,
         )
         st.caption(
-            "One line per HR band: the 28-day rolling median pace at that "
-            "band, connecting sufficient weeks only. Points are weekly "
-            "medians; week × band points below the 2-run sufficiency "
-            "threshold are shown as smaller hollow rings — de-emphasized, "
-            "no longer excluded — and stay flagged in the table."
+            "One faint point per run per HR band — that run's median pace "
+            "in the band. One line per band: the 28-day rolling median "
+            "across those run medians, with a vertex only at sufficient "
+            "weeks; weeks under the 2-run threshold contribute no vertex "
+            "and stay flagged in the table below."
         )
     st.dataframe(
         band_trend.sort_values(["week_start_date", "band_sort_order"]),
