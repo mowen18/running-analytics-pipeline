@@ -50,9 +50,9 @@ select
         (1609.344 / nullif(weekly.median_velocity_m_per_s * 60.0, 0))::numeric, 2
     )                                                 as median_pace_min_per_mi,
     round(weekly.avg_temperature_f::numeric, 1)       as avg_temperature_f,
-    -- D12 reused at week x band grain; the dashboard HIDES trend points
-    -- where this is false — the rows stay present so nothing is
-    -- silently dropped from the warehouse.
+    -- D12 reused at week x band grain. The flag gates presentation
+    -- downstream (how is the dashboard's business); the rows stay
+    -- present so nothing is silently dropped from the warehouse.
     weekly.contributing_run_count >= {{ var('min_weekly_valid_runs') }} as is_sufficient
 from weekly
 inner join {{ ref('hr_bands') }} bands using (band_key)
