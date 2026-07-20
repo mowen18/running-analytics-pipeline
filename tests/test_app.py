@@ -32,8 +32,9 @@ VIEW_NAMES = ["Aerobic efficiency", "Weekly training", "Cardiac drift"]
 
 # The approved marts — D19 allows nothing else. Deliberately NOT the
 # whole mart layer: mart_band_weekly stays out because the weekly band
-# statistics travel inside mart_band_trend (v1.4 — the allow-list grows
-# by exactly one name).
+# statistics travel inside mart_band_trend (v1.4), while
+# mart_run_band_segments is the band chart's run-level scatter (v1.6 —
+# each revision grows the list by exactly one name, proven red first).
 MART_TABLES = frozenset(
     {
         "mart_weekly_training",
@@ -43,6 +44,7 @@ MART_TABLES = frozenset(
         "mart_run_drift",
         "mart_drift_trend",
         "mart_band_trend",
+        "mart_run_band_segments",
     }
 )
 
@@ -76,10 +78,10 @@ def test_core_relations_are_refused_even_in_the_analytics_schema():
 
 
 def test_unlisted_marts_are_refused():
-    """v1.4 grows the allow-list by exactly one name (mart_band_trend);
-    mart_band_weekly is a real mart but the weekly statistics travel
-    inside the trend mart, so the app must refuse it like anything else
-    off the list."""
+    """Each revision grows the allow-list by exactly one name (v1.4:
+    mart_band_trend; v1.6: mart_run_band_segments); mart_band_weekly is
+    a real mart but the weekly statistics travel inside the trend mart,
+    so the app must refuse it like anything else off the list."""
     app = load_app_module()
     with pytest.raises(ValueError, match="not an approved analytics relation"):
         app.load("mart_band_weekly")

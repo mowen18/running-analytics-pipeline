@@ -128,3 +128,18 @@
 - Rotated Strava tokens live in `.secrets/strava_tokens.json` (gitignored,
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.
+
+## Verifying chart changes
+
+Any change that affects a rendered chart is verified by looking at the
+rendered result, never by spec or schema validation alone.
+
+Procedure:
+1. Ensure Postgres is up and start the app (make app, port 8501).
+2. Use the Playwright MCP tools to open the view, wait for the chart
+   canvas to render, and take a screenshot.
+3. Open the screenshot and check it against the change's intent before
+   committing. State in the report what the image shows.
+
+If the app cannot run (no database), fall back to chart.save PNG via
+vl-convert and say so in the report.

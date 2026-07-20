@@ -249,6 +249,7 @@ flowchart LR
         model_running_analytics_mart_drift_trend["mart_drift_trend"]
         model_running_analytics_mart_efficiency_by_temp_band["mart_efficiency_by_temp_band"]
         model_running_analytics_mart_efficiency_trend["mart_efficiency_trend"]
+        model_running_analytics_mart_run_band_segments["mart_run_band_segments"]
         model_running_analytics_mart_run_drift["mart_run_drift"]
         model_running_analytics_mart_run_quality["mart_run_quality"]
         model_running_analytics_mart_weekly_training["mart_weekly_training"]
@@ -259,6 +260,7 @@ flowchart LR
     model_running_analytics_fct_drift_candidates --> model_running_analytics_mart_run_quality
     model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_band_trend
     model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_band_weekly
+    model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_run_band_segments
     model_running_analytics_fct_runs --> model_running_analytics_mart_band_weekly
     model_running_analytics_fct_runs --> model_running_analytics_mart_efficiency_by_temp_band
     model_running_analytics_fct_runs --> model_running_analytics_mart_efficiency_trend
@@ -285,6 +287,7 @@ flowchart LR
     model_running_analytics_stg_weather__hourly --> model_running_analytics_int_runs_with_weather
     seed_running_analytics_hr_bands --> model_running_analytics_int_band_window_samples
     seed_running_analytics_hr_bands --> model_running_analytics_mart_band_weekly
+    seed_running_analytics_hr_bands --> model_running_analytics_mart_run_band_segments
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_by_temp_band
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_trend
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
@@ -323,6 +326,7 @@ inventory but deliberately not modeled downstream.
 | Mart | `mart_drift_trend` | `analytics` | one row per week of drift runs + rolling median |
 | Mart | `mart_efficiency_by_temp_band` | `analytics` | one row per D14 temp band (+ explicit weather-unavailable row) |
 | Mart | `mart_efficiency_trend` | `analytics` | one row per week + 28-day rolling median |
+| Mart | `mart_run_band_segments` | `analytics` | one row per analyzed run × HR band — the run's band median pace and dwell, the band chart's scatter (v1.6) |
 | Mart | `mart_run_drift` | `analytics` | one row per analyzed drift run |
 | Mart | `mart_run_quality` | `analytics` | one row per running activity + quality verdicts (validity, band, drift, HR band) |
 | Mart | `mart_weekly_training` | `analytics` | one row per training week |
@@ -488,9 +492,11 @@ could not tell them apart) — and contains no business logic; every
 metric, threshold, and flag is computed and tested in dbt.
 Sample counts appear beside every statistic; weeks below the D12 run
 count are flagged `is_sufficient = false` and excluded from trend lines
-(the pace-at-HR-band chart shows them as de-emphasized, unconnected
-points), but stay visible in every table; and each empty view explains
-exactly what data would populate it.
+(the pace-at-HR-band chart instead plots every run×band median as a
+faint point from `mart_run_band_segments`, v1.6, under a rolling line
+whose vertices are sufficient weeks only), but stay visible in every
+table; and each empty view explains exactly what data would populate
+it.
 
 ## Data-quality principles
 

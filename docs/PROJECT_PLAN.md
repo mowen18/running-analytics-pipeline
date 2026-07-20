@@ -965,3 +965,31 @@ existing Make targets unchanged — no pipeline code changes;
 (d) LocalExecutor-or-simpler, SQLite metadata DB, no
 Celery/Redis/Docker for Airflow in this release; (e) Airflow lives in
 its own venv, never in the project's dependencies.
+
+# Revision v1.6 — 2026-07-20 — Run×band scatter mart for the band view (Addendum)
+
+Recorded in `docs/decisions/v1.6-band-run-scatter.md`.
+Summary: new mart `mart_run_band_segments` (run × band grain — an
+explicit-column projection of core `fct_run_band_segments` joined to
+the `hr_bands` seed; no layer-matrix change, nothing upstream of
+existing marts moves). The dashboard's band chart becomes one faint
+point per run per band with the 28-day rolling median line as the only
+line, and the allow-list grows by exactly that mart, proven red first.
+D22's weekly median-of-run-medians definition and `mart_band_weekly`'s
+output are unchanged, pinned by a velocity-space consistency test
+(`assert_band_weekly_matches_segment_mart`); no threshold var changes.
+
+# Revision v1.6.1 — 2026-07-20 — Vertex rule for the band run-scatter rolling line (Addendum)
+
+The 28-day rolling median line in the pace-at-HR-band chart places a
+vertex at every week × band where the window itself holds at least two
+contributing runs (`rolling_band_run_count >=
+ROLLING_LINE_MIN_WINDOW_RUNS`, an app-side constant, default 2). Where
+a week fails that threshold the line BREAKS; it never bridges.
+Rationale: the line is a window-grain statistic, so its support is the
+window's sample count, not the week's. D12 is unchanged and continues
+to govern weekly-grain display: weekly points, `is_sufficient` flags,
+tables, and the efficiency trend marts. This supersedes, for this view
+only, the v1.6 sentence "still connecting sufficient weeks only" and
+the v1.4 rendering convention "insufficient week × band points
+excluded from trend lines."
