@@ -337,3 +337,60 @@ models:
         description: >
           The weekly D12 flag carried through from mart_band_weekly.
         tests: [not_null]
+
+  - name: mart_run_band_segments
+    description: >
+      One row per analyzed run per HR band (v1.6) — the scatter the
+      dashboard's band chart reads: the run's band median pace with its
+      date, training week, and minutes of dwell. Explicit-column
+      projection of core fct_run_band_segments joined to the hr_bands
+      seed for display columns; no filters beyond core's analyzed-only
+      and dwell-minimum rules. median_velocity_m_per_s rides along for
+      the v1.6 consistency contract
+      (assert_band_weekly_matches_segment_mart); pace is the display
+      unit, as everywhere else.
+    columns:
+      - name: activity_id
+        description: >
+          Strava activity (composite grain with band_key —
+          assert_band_segments_mart_unique_per_run_band).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_runs')
+                field: activity_id
+      - name: start_date_local
+        description: The run's local start time (the scatter x position).
+        tests: [not_null]
+      - name: week_start_date
+        description: Monday of the local training week.
+        tests: [not_null]
+      - name: band_key
+        description: hr_bands seed key.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('hr_bands')
+                field: band_key
+      - name: band_label
+        description: Display label from the hr_bands seed.
+        tests: [not_null]
+      - name: band_sort_order
+        description: Low-to-high HR display order from the seed.
+        tests: [not_null]
+      - name: median_velocity_m_per_s
+        description: >
+          The run's median velocity in this band (from core, 3 dp) —
+          the consistency-contract column; medians live in velocity
+          space end to end.
+        tests: [not_null]
+      - name: median_pace_min_per_mi
+        description: The run's band median as pace (display unit).
+        tests: [not_null]
+      - name: dwell_min
+        description: >
+          Capped dwell in this band in minutes (core enforces the
+          5-minute D22 floor in seconds).
+        tests: [not_null]
