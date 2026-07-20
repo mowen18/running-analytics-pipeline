@@ -187,6 +187,12 @@ RUN_QUALITY_COLUMNS = {
 # shown by default. Presence-and-count driven, never a band-name list.
 DEFAULT_BAND_MIN_TOTAL_RUNS = 3
 
+# v1.6.1: the rolling line is a window-grain statistic, so a vertex
+# needs only its own 28-day window to hold this many contributing runs
+# (rolling_band_run_count); weekly D12 sufficiency governs the table
+# flag, never the line. Weeks under this break the line — no bridging.
+ROLLING_LINE_MIN_WINDOW_RUNS = 2
+
 BAND_TREND_COLUMNS = {
     "week_start_date": st.column_config.DateColumn("Week", format="MMM D"),
     "band_key": None,  # the label column already carries it
@@ -330,12 +336,6 @@ def efficiency_view():
         "signal of an improving aerobic base (D22)."
     )
     band_trend = load("mart_band_trend")
-    # astype(bool): same psycopg object-dtype guard as the efficiency mask.
-    band_trend = band_trend.copy()
-    band_trend["is_sufficient"] = band_trend["is_sufficient"].astype(bool)
-    band_sufficient = band_trend[band_trend["is_sufficient"]].dropna(
-        subset=["rolling_median_pace_min_per_mi"]
-    )
     run_segments = load("mart_run_band_segments")
     # Empty-state on the PRE-filter frame: the weekly marts aggregate
     # these rows, so run rows exist iff weekly rows exist — and keying
@@ -361,7 +361,13 @@ def efficiency_view():
         ] or band_order  # every band sparse: show all rather than a blank chart
         selected_bands = st.multiselect("HR bands", options=band_order, default=default_bands)
         run_selected = run_segments[run_segments["band_label"].isin(selected_bands)]
-        band_sufficient = band_sufficient[band_sufficient["band_label"].isin(selected_bands)]
+        # v1.6.1 vertex rule: the line keeps EVERY selected week, with y
+        # nulled where the rolling window holds too few runs — nulls
+        # BREAK the path (no vertex, no bridge). Weekly is_sufficient no
+        # longer touches the line; it stays a table flag.
+        line_frame = band_trend[band_trend["band_label"].isin(selected_bands)].copy()
+        thin_window = line_frame["rolling_band_run_count"] < ROLLING_LINE_MIN_WINDOW_RUNS
+        line_frame.loc[thin_window, "rolling_median_pace_min_per_mi"] = float("nan")
 
         # Monday ticks from the scatter's weeks (a superset of the
         # sufficient line's weeks); the SAME axis and title go to both
@@ -407,9 +413,21 @@ def efficiency_view():
                 ],
             )
         )
+        line_tooltip = [
+            alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
+            alt.Tooltip("band_label:N", title="band"),
+            alt.Tooltip("rolling_median_pace_min_per_mi:Q", title="28-day median", format=".2f"),
+            alt.Tooltip("rolling_band_run_count:Q", title="runs in window (n)"),
+            alt.Tooltip("median_pace_min_per_mi:Q", title="weekly median", format=".2f"),
+            alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
+        ]
         band_lines = (
-            alt.Chart(band_sufficient)
-            .mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=36))
+            alt.Chart(line_frame)
+            # invalid=None keeps the nulled rows in the path so it BREAKS
+            # at thin-window weeks instead of bridging them. The vertex
+            # dots are their own layer (below) rather than a point
+            # overlay: an overlay point at null y has no defined render.
+            .mark_line(strokeWidth=2, invalid=None)
             .encode(
                 x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
                 y=alt.Y(
@@ -418,28 +436,34 @@ def efficiency_view():
                     scale=pace_y_scale,
                 ),
                 color=band_color,
-                tooltip=[
-                    alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
-                    alt.Tooltip("band_label:N", title="band"),
-                    alt.Tooltip(
-                        "rolling_median_pace_min_per_mi:Q", title="28-day median", format=".2f"
-                    ),
-                    alt.Tooltip("rolling_band_run_count:Q", title="runs in window (n)"),
-                    alt.Tooltip("median_pace_min_per_mi:Q", title="weekly median", format=".2f"),
-                    alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
-                ],
+                tooltip=line_tooltip,
+            )
+        )
+        band_vertices = (
+            alt.Chart(line_frame.dropna(subset=["rolling_median_pace_min_per_mi"]))
+            .mark_circle(size=36)
+            .encode(
+                x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+                y=alt.Y(
+                    "rolling_median_pace_min_per_mi:Q",
+                    title="min per mile (up = faster)",
+                    scale=pace_y_scale,
+                ),
+                color=band_color,
+                tooltip=line_tooltip,
             )
         )
         st.altair_chart(
-            themed(alt.layer(run_points, band_lines).properties(height=320)),
+            themed(alt.layer(run_points, band_lines, band_vertices).properties(height=320)),
             use_container_width=True,
         )
         st.caption(
             "One faint point per run per HR band — that run's median pace "
             "in the band. One line per band: the 28-day rolling median "
-            "across those run medians, with a vertex only at sufficient "
-            "weeks; weeks under the 2-run threshold contribute no vertex "
-            "and stay flagged in the table below."
+            "across those run medians, with a vertex wherever the 28-day "
+            f"window holds at least {ROLLING_LINE_MIN_WINDOW_RUNS} runs; "
+            "a gap means the window was too thin. Weekly sufficiency is a "
+            "table flag, not a line rule (v1.6.1)."
         )
     st.dataframe(
         band_trend.sort_values(["week_start_date", "band_sort_order"]),
