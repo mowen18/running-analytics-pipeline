@@ -49,7 +49,7 @@
   it). Existing marts proven byte-identical pre-gate-change; band data
   for 20–45 min runs arrives only as post-merge `make sync-streams`
   backfill drains ('streams not yet loaded' until then).
-- Current phase: Airflow adoption (v1.5) complete and merged to main
+- Airflow adoption (v1.5) is complete and merged to main
   (2026-07-16). Addendum (docs/decisions/v1.5-airflow-addendum.md,
   revising D18) adopted; Airflow 3.3.0 at ~/.venvs/airflow on Python 3.13.14;
   the running_pipeline DAG (orchestration/dags/running_pipeline_dag.py)
@@ -57,6 +57,19 @@
   scheduler path (10/10 task successes, idempotent no-op counts).
   Airflow is a THIN scheduling and observability layer only; see the
   scope constraints below.
+- Current phase: v1.6 + v1.6.1 merged to main (2026-07-20).
+  mart_run_band_segments (run × band grain, explicit-column projection
+  of core fct_run_band_segments + the hr_bands seed — no layer-matrix
+  change; the app allow-list grew by exactly this name, red-first)
+  feeds the band chart: one faint point per run per band under the
+  28-day rolling median line, whose vertices key on window support
+  (rolling_band_run_count >= ROLLING_LINE_MIN_WINDOW_RUNS, app-side
+  constant, default 2) with segment-id path breaks — never bridging
+  (v1.6.1 supersedes v1.6's "sufficient weeks only" line rule). D22's
+  weekly definition and mart_band_weekly's output are unchanged,
+  pinned by assert_band_weekly_matches_segment_mart (velocity space).
+  Addendums: docs/decisions/v1.6-band-run-scatter.md + the v1.6.1
+  entry appended to docs/PROJECT_PLAN.md.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and
