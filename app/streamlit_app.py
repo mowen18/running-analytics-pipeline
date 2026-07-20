@@ -179,6 +179,11 @@ RUN_QUALITY_COLUMNS = {
     "band_exclusion_reason": st.column_config.TextColumn("HR-band note"),
 }
 
+# Bands whose total contributing-run count across all weeks falls below
+# this start deselected in the band filter — still selectable, just not
+# shown by default. Presence-and-count driven, never a band-name list.
+DEFAULT_BAND_MIN_TOTAL_RUNS = 3
+
 BAND_TREND_COLUMNS = {
     "week_start_date": st.column_config.DateColumn("Week", format="MMM D"),
     "band_key": None,  # the label column already carries it
@@ -335,10 +340,24 @@ def efficiency_view():
             "`make sync-streams` catches up."
         )
     else:
+        # Band filter: every band present in the data, low->high HR.
+        # Sparse bands start deselected so the y-axis fits the bands
+        # that carry the trend; nothing is hidden for good — any band
+        # can be re-selected.
+        band_order = band_points.sort_values("band_sort_order")["band_label"].unique().tolist()
+        band_totals = band_points.groupby("band_label")["contributing_run_count"].sum()
+        default_bands = [
+            label for label in band_order if band_totals[label] >= DEFAULT_BAND_MIN_TOTAL_RUNS
+        ] or band_order  # every band sparse: show all rather than a blank chart
+        selected_bands = st.multiselect("HR bands", options=band_order, default=default_bands)
+        band_points = band_points[band_points["band_label"].isin(selected_bands)]
+        band_sufficient = band_sufficient[band_sufficient["band_label"].isin(selected_bands)]
+
         axis = week_axis(band_points["week_start_date"])
         # reverse=True: pace improves DOWNWARD in min/mi, so the
         # reversed axis makes an improving aerobic base read as
-        # an upward trend — the caption states the convention.
+        # an upward trend — the caption states the convention. No fixed
+        # domain: the axis fits whatever bands are selected.
         pace_y_scale = alt.Scale(zero=False, nice=True, reverse=True)
         # Ordered low->high HR bands on the ordinal blue ramp,
         # same philosophy as the temperature bands.
@@ -349,11 +368,14 @@ def efficiency_view():
             title="HR band",
         )
         # Every week x band weekly median, sufficient or not: weeks under
-        # the D12 threshold render smaller and fainter instead of
-        # vanishing — driven by is_sufficient, never by dates.
+        # the D12 threshold render as smaller HOLLOW rings at full
+        # opacity (reduced opacity washed out the light end of the blue
+        # ramp) — driven by is_sufficient, never by dates. On unfilled
+        # points the color channel strokes the ring; the fill condition
+        # solidifies sufficient weeks only.
         weekly_points = (
             alt.Chart(band_points)
-            .mark_circle()
+            .mark_point()
             .encode(
                 x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
                 y=alt.Y(
@@ -362,8 +384,18 @@ def efficiency_view():
                     scale=pace_y_scale,
                 ),
                 color=band_color,
+                fill=alt.condition(
+                    alt.datum.is_sufficient,
+                    alt.Fill(
+                        "band_label:N",
+                        sort=alt.EncodingSortField(field="band_sort_order", op="min"),
+                        scale=alt.Scale(scheme="blues"),
+                        legend=None,  # the color channel already carries the legend
+                    ),
+                    alt.value("transparent"),
+                ),
                 size=alt.condition(alt.datum.is_sufficient, alt.value(64), alt.value(26)),
-                opacity=alt.condition(alt.datum.is_sufficient, alt.value(0.9), alt.value(0.35)),
+                opacity=alt.value(0.9),
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
                     alt.Tooltip("band_label:N", title="band"),
@@ -407,8 +439,8 @@ def efficiency_view():
             "One line per HR band: the 28-day rolling median pace at that "
             "band, connecting sufficient weeks only. Points are weekly "
             "medians; week × band points below the 2-run sufficiency "
-            "threshold are shown smaller and fainter — de-emphasized, no "
-            "longer excluded — and stay flagged in the table."
+            "threshold are shown as smaller hollow rings — de-emphasized, "
+            "no longer excluded — and stay flagged in the table."
         )
     st.dataframe(
         band_trend.sort_values(["week_start_date", "band_sort_order"]),
