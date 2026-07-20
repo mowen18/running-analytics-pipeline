@@ -978,3 +978,18 @@ line, and the allow-list grows by exactly that mart, proven red first.
 D22's weekly median-of-run-medians definition and `mart_band_weekly`'s
 output are unchanged, pinned by a velocity-space consistency test
 (`assert_band_weekly_matches_segment_mart`); no threshold var changes.
+
+# Revision v1.6.1 — 2026-07-20 — Vertex rule for the band run-scatter rolling line (Addendum)
+
+The 28-day rolling median line in the pace-at-HR-band chart places a
+vertex at every week × band where the window itself holds at least two
+contributing runs (`rolling_band_run_count >=
+ROLLING_LINE_MIN_WINDOW_RUNS`, an app-side constant, default 2). Where
+a week fails that threshold the line BREAKS; it never bridges.
+Rationale: the line is a window-grain statistic, so its support is the
+window's sample count, not the week's. D12 is unchanged and continues
+to govern weekly-grain display: weekly points, `is_sufficient` flags,
+tables, and the efficiency trend marts. This supersedes, for this view
+only, the v1.6 sentence "still connecting sufficient weeks only" and
+the v1.4 rendering convention "insufficient week × band points
+excluded from trend lines."

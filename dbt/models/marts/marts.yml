@@ -302,10 +302,12 @@ models:
       never the interface. Sign of interest, observational never
       causal: RISING pace (falling min/mi) at the same HR band signals
       an improving aerobic base. The dashboard draws its rolling line
-      from these rows with a vertex only at sufficient weeks (run-level
-      points come from mart_run_band_segments, v1.6); every week x band
-      row, sufficient or not, stays queryable here and renders in the
-      dashboard table.
+      from these rows with a vertex wherever the trailing window holds
+      enough runs (rolling_band_run_count, v1.6.1 — the line breaks at
+      thinner weeks; weekly D12 sufficiency governs the table flag,
+      not the line). Run-level points come from mart_run_band_segments
+      (v1.6), and every week x band row stays queryable here and
+      renders in the dashboard table.
     columns:
       - name: week_start_date
         description: >
