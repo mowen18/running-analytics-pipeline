@@ -213,6 +213,117 @@ BAND_TREND_COLUMNS = {
 }
 
 
+def band_chart(band_trend, run_segments, selected_bands) -> alt.LayerChart:
+    """The pace-at-HR-band chart layers for one band selection.
+
+    Extracted from the view so the exact shipped spec can be rendered
+    headlessly (chart.save → PNG): rendering bugs — like nulled rows
+    pinning to the reversed axis's top edge — are invisible to schema
+    validation and AppTest alike.
+    """
+    run_selected = run_segments[run_segments["band_label"].isin(selected_bands)]
+    # v1.6.1 vertex rule, segment edition: the line data holds PASSING
+    # weeks only (window >= threshold) — never null-y rows, which the
+    # reversed axis would render pinned to the top edge. Per band, a
+    # hole longer than one week — a thin-window week or an absent row
+    # alike — starts a new line_segment_id, and the detail channel
+    # keeps each segment its own path, so gaps never bridge.
+    line_frame = (
+        band_trend[
+            band_trend["band_label"].isin(selected_bands)
+            & (band_trend["rolling_band_run_count"] >= ROLLING_LINE_MIN_WINDOW_RUNS)
+        ]
+        .sort_values(["band_label", "week_start_date"])
+        .copy()
+    )
+    weeks = pd.to_datetime(line_frame["week_start_date"])
+    new_segment = weeks.groupby(line_frame["band_label"]).diff().dt.days.gt(7)
+    line_frame["line_segment_id"] = (
+        new_segment.groupby(line_frame["band_label"]).cumsum().astype(int)
+    )
+
+    # Monday ticks from the scatter's weeks (a superset of the line's
+    # weeks); the SAME axis and title go to every layer, or Vega-Lite
+    # concatenates the merged axis titles.
+    axis = week_axis(run_selected["week_start_date"])
+    # reverse=True: pace improves DOWNWARD in min/mi, so the
+    # reversed axis makes an improving aerobic base read as
+    # an upward trend — the caption states the convention. No fixed
+    # domain: the axis fits whatever bands are selected.
+    pace_y_scale = alt.Scale(zero=False, nice=True, reverse=True)
+    # Ordered low->high HR bands on the ordinal blue ramp, same
+    # philosophy as the temperature bands — clamped away from the
+    # near-white end so FAINT scatter points in the lowest bands
+    # stay visible (the washed-out-ramp lesson, applied to hue).
+    band_color = alt.Color(
+        "band_label:N",
+        sort=alt.EncodingSortField(field="band_sort_order", op="min"),
+        scale=alt.Scale(scheme=alt.SchemeParams(name="blues", extent=[0.35, 1])),
+        title="HR band",
+    )
+    # One faint point per run per band (v1.6): the run's median
+    # pace in that band, on the run's own date. Weekly medians stay
+    # in the table below — on the chart they duplicated these
+    # points at current data volume.
+    run_points = (
+        alt.Chart(run_selected)
+        .mark_circle(size=40, opacity=0.5)
+        .encode(
+            x=alt.X("start_date_local:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+            y=alt.Y(
+                "median_pace_min_per_mi:Q",
+                title="min per mile (up = faster)",
+                scale=pace_y_scale,
+            ),
+            color=band_color,
+            tooltip=[
+                alt.Tooltip("start_date_local:T", title="run", format="%b %d"),
+                alt.Tooltip("band_label:N", title="band"),
+                alt.Tooltip("median_pace_min_per_mi:Q", title="run band median", format=".2f"),
+                alt.Tooltip("dwell_min:Q", title="minutes in band", format=".1f"),
+            ],
+        )
+    )
+    line_tooltip = [
+        alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
+        alt.Tooltip("band_label:N", title="band"),
+        alt.Tooltip("rolling_median_pace_min_per_mi:Q", title="28-day median", format=".2f"),
+        alt.Tooltip("rolling_band_run_count:Q", title="runs in window (n)"),
+        alt.Tooltip("median_pace_min_per_mi:Q", title="weekly median", format=".2f"),
+        alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
+    ]
+    band_lines = (
+        alt.Chart(line_frame)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+            y=alt.Y(
+                "rolling_median_pace_min_per_mi:Q",
+                title="min per mile (up = faster)",
+                scale=pace_y_scale,
+            ),
+            color=band_color,
+            detail=alt.Detail("line_segment_id:N"),
+            tooltip=line_tooltip,
+        )
+    )
+    band_vertices = (
+        alt.Chart(line_frame.dropna(subset=["rolling_median_pace_min_per_mi"]))
+        .mark_circle(size=36)
+        .encode(
+            x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+            y=alt.Y(
+                "rolling_median_pace_min_per_mi:Q",
+                title="min per mile (up = faster)",
+                scale=pace_y_scale,
+            ),
+            color=band_color,
+            tooltip=line_tooltip,
+        )
+    )
+    return alt.layer(run_points, band_lines, band_vertices).properties(height=320)
+
+
 def efficiency_view():
     st.header("Aerobic efficiency")
     st.caption(
@@ -360,101 +471,8 @@ def efficiency_view():
             label for label in band_order if band_totals[label] >= DEFAULT_BAND_MIN_TOTAL_RUNS
         ] or band_order  # every band sparse: show all rather than a blank chart
         selected_bands = st.multiselect("HR bands", options=band_order, default=default_bands)
-        run_selected = run_segments[run_segments["band_label"].isin(selected_bands)]
-        # v1.6.1 vertex rule: the line keeps EVERY selected week, with y
-        # nulled where the rolling window holds too few runs — nulls
-        # BREAK the path (no vertex, no bridge). Weekly is_sufficient no
-        # longer touches the line; it stays a table flag.
-        line_frame = band_trend[band_trend["band_label"].isin(selected_bands)].copy()
-        thin_window = line_frame["rolling_band_run_count"] < ROLLING_LINE_MIN_WINDOW_RUNS
-        line_frame.loc[thin_window, "rolling_median_pace_min_per_mi"] = float("nan")
-
-        # Monday ticks from the scatter's weeks (a superset of the
-        # sufficient line's weeks); the SAME axis and title go to both
-        # layers, or Vega-Lite concatenates the merged axis titles.
-        axis = week_axis(run_selected["week_start_date"])
-        # reverse=True: pace improves DOWNWARD in min/mi, so the
-        # reversed axis makes an improving aerobic base read as
-        # an upward trend — the caption states the convention. No fixed
-        # domain: the axis fits whatever bands are selected.
-        pace_y_scale = alt.Scale(zero=False, nice=True, reverse=True)
-        # Ordered low->high HR bands on the ordinal blue ramp, same
-        # philosophy as the temperature bands — clamped away from the
-        # near-white end so FAINT scatter points in the lowest bands
-        # stay visible (the washed-out-ramp lesson, applied to hue).
-        band_color = alt.Color(
-            "band_label:N",
-            sort=alt.EncodingSortField(field="band_sort_order", op="min"),
-            scale=alt.Scale(scheme=alt.SchemeParams(name="blues", extent=[0.35, 1])),
-            title="HR band",
-        )
-        # One faint point per run per band (v1.6): the run's median
-        # pace in that band, on the run's own date. Weekly medians stay
-        # in the table below — on the chart they duplicated these
-        # points at current data volume.
-        run_points = (
-            alt.Chart(run_selected)
-            .mark_circle(size=40, opacity=0.5)
-            .encode(
-                x=alt.X(
-                    "start_date_local:T", title="training week", axis=axis, scale=TIME_X_SCALE
-                ),
-                y=alt.Y(
-                    "median_pace_min_per_mi:Q",
-                    title="min per mile (up = faster)",
-                    scale=pace_y_scale,
-                ),
-                color=band_color,
-                tooltip=[
-                    alt.Tooltip("start_date_local:T", title="run", format="%b %d"),
-                    alt.Tooltip("band_label:N", title="band"),
-                    alt.Tooltip("median_pace_min_per_mi:Q", title="run band median", format=".2f"),
-                    alt.Tooltip("dwell_min:Q", title="minutes in band", format=".1f"),
-                ],
-            )
-        )
-        line_tooltip = [
-            alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
-            alt.Tooltip("band_label:N", title="band"),
-            alt.Tooltip("rolling_median_pace_min_per_mi:Q", title="28-day median", format=".2f"),
-            alt.Tooltip("rolling_band_run_count:Q", title="runs in window (n)"),
-            alt.Tooltip("median_pace_min_per_mi:Q", title="weekly median", format=".2f"),
-            alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
-        ]
-        band_lines = (
-            alt.Chart(line_frame)
-            # invalid=None keeps the nulled rows in the path so it BREAKS
-            # at thin-window weeks instead of bridging them. The vertex
-            # dots are their own layer (below) rather than a point
-            # overlay: an overlay point at null y has no defined render.
-            .mark_line(strokeWidth=2, invalid=None)
-            .encode(
-                x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
-                y=alt.Y(
-                    "rolling_median_pace_min_per_mi:Q",
-                    title="min per mile (up = faster)",
-                    scale=pace_y_scale,
-                ),
-                color=band_color,
-                tooltip=line_tooltip,
-            )
-        )
-        band_vertices = (
-            alt.Chart(line_frame.dropna(subset=["rolling_median_pace_min_per_mi"]))
-            .mark_circle(size=36)
-            .encode(
-                x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
-                y=alt.Y(
-                    "rolling_median_pace_min_per_mi:Q",
-                    title="min per mile (up = faster)",
-                    scale=pace_y_scale,
-                ),
-                color=band_color,
-                tooltip=line_tooltip,
-            )
-        )
         st.altair_chart(
-            themed(alt.layer(run_points, band_lines, band_vertices).properties(height=320)),
+            themed(band_chart(band_trend, run_segments, selected_bands)),
             use_container_width=True,
         )
         st.caption(
