@@ -487,9 +487,10 @@ exact contents and refuses any other relation, core facts included
 could not tell them apart) — and contains no business logic; every
 metric, threshold, and flag is computed and tested in dbt.
 Sample counts appear beside every statistic; weeks below the D12 run
-count are flagged `is_sufficient = false` and excluded from trend lines,
-but stay visible in every table; and each empty view explains exactly
-what data would populate it.
+count are flagged `is_sufficient = false` and excluded from trend lines
+(the pace-at-HR-band chart shows them as de-emphasized, unconnected
+points), but stay visible in every table; and each empty view explains
+exactly what data would populate it.
 
 ## Data-quality principles
 

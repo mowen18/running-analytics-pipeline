@@ -301,8 +301,9 @@ models:
       with STATIC column names per v1.3 — the var changes the window,
       never the interface. Sign of interest, observational never
       causal: RISING pace (falling min/mi) at the same HR band signals
-      an improving aerobic base. The dashboard hides insufficient
-      week x band points from trend lines while the rows remain
+      an improving aerobic base. The dashboard connects trend lines
+      through sufficient weeks only and shows insufficient week x band
+      points de-emphasized rather than hidden; the rows remain
       queryable here.
     columns:
       - name: week_start_date

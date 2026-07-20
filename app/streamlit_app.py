@@ -321,39 +321,72 @@ def efficiency_view():
         "signal of an improving aerobic base (D22)."
     )
     band_trend = load("mart_band_trend")
-    band_sufficient = band_trend[band_trend["is_sufficient"].astype(bool)].dropna(
+    # astype(bool): same psycopg object-dtype guard as the efficiency mask.
+    band_points = band_trend.dropna(subset=["median_pace_min_per_mi"]).copy()
+    band_points["is_sufficient"] = band_points["is_sufficient"].astype(bool)
+    band_sufficient = band_points[band_points["is_sufficient"]].dropna(
         subset=["rolling_median_pace_min_per_mi"]
     )
-    if band_sufficient.empty:
+    if band_points.empty:
         st.info(
-            "No band trend yet: no week has 2 contributing runs at the same "
-            "HR band. Runs of 20–45 minutes gain streams as the post-v1.4 "
-            "backfill drains, so this section fills in after `make "
-            "sync-streams` catches up."
+            "No band data yet: no run has an HR band with the required "
+            "5 minutes of dwell. Runs of 20–45 minutes gain streams as the "
+            "post-v1.4 backfill drains, so this section fills in after "
+            "`make sync-streams` catches up."
         )
     else:
-        axis = week_axis(band_sufficient["week_start_date"])
+        axis = week_axis(band_points["week_start_date"])
+        # reverse=True: pace improves DOWNWARD in min/mi, so the
+        # reversed axis makes an improving aerobic base read as
+        # an upward trend — the caption states the convention.
+        pace_y_scale = alt.Scale(zero=False, nice=True, reverse=True)
+        # Ordered low->high HR bands on the ordinal blue ramp,
+        # same philosophy as the temperature bands.
+        band_color = alt.Color(
+            "band_label:N",
+            sort=alt.EncodingSortField(field="band_sort_order", op="min"),
+            scale=alt.Scale(scheme="blues"),
+            title="HR band",
+        )
+        # Every week x band weekly median, sufficient or not: weeks under
+        # the D12 threshold render smaller and fainter instead of
+        # vanishing — driven by is_sufficient, never by dates.
+        weekly_points = (
+            alt.Chart(band_points)
+            .mark_circle()
+            .encode(
+                x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
+                y=alt.Y(
+                    "median_pace_min_per_mi:Q",
+                    title="min per mile (up = faster)",
+                    scale=pace_y_scale,
+                ),
+                color=band_color,
+                size=alt.condition(alt.datum.is_sufficient, alt.value(64), alt.value(26)),
+                opacity=alt.condition(alt.datum.is_sufficient, alt.value(0.9), alt.value(0.35)),
+                tooltip=[
+                    alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
+                    alt.Tooltip("band_label:N", title="band"),
+                    alt.Tooltip("median_pace_min_per_mi:Q", title="weekly median", format=".2f"),
+                    alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
+                    alt.Tooltip(
+                        "rolling_median_pace_min_per_mi:Q", title="28-day median", format=".2f"
+                    ),
+                    alt.Tooltip("rolling_band_run_count:Q", title="runs in window (n)"),
+                ],
+            )
+        )
         band_lines = (
             alt.Chart(band_sufficient)
             .mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=36))
             .encode(
                 x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
-                # reverse=True: pace improves DOWNWARD in min/mi, so the
-                # reversed axis makes an improving aerobic base read as
-                # an upward trend — the caption states the convention.
                 y=alt.Y(
                     "rolling_median_pace_min_per_mi:Q",
                     title="min per mile (up = faster)",
-                    scale=alt.Scale(zero=False, nice=True, reverse=True),
+                    scale=pace_y_scale,
                 ),
-                # Ordered low->high HR bands on the ordinal blue ramp,
-                # same philosophy as the temperature bands.
-                color=alt.Color(
-                    "band_label:N",
-                    sort=alt.EncodingSortField(field="band_sort_order", op="min"),
-                    scale=alt.Scale(scheme="blues"),
-                    title="HR band",
-                ),
+                color=band_color,
                 tooltip=[
                     alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
                     alt.Tooltip("band_label:N", title="band"),
@@ -365,13 +398,17 @@ def efficiency_view():
                     alt.Tooltip("contributing_run_count:Q", title="runs this week (n)"),
                 ],
             )
-            .properties(height=320)
         )
-        st.altair_chart(themed(band_lines), use_container_width=True)
+        st.altair_chart(
+            themed(alt.layer(weekly_points, band_lines).properties(height=320)),
+            use_container_width=True,
+        )
         st.caption(
             "One line per HR band: the 28-day rolling median pace at that "
-            "band. Week × band points below the 2-run sufficiency threshold "
-            "are excluded from the lines and flagged in the table."
+            "band, connecting sufficient weeks only. Points are weekly "
+            "medians; week × band points below the 2-run sufficiency "
+            "threshold are shown smaller and fainter — de-emphasized, no "
+            "longer excluded — and stay flagged in the table."
         )
     st.dataframe(
         band_trend.sort_values(["week_start_date", "band_sort_order"]),
