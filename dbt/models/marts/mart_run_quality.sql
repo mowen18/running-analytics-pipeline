@@ -54,9 +54,11 @@ select
     runs.long_run_eligible,
     runs.weather_available,
     runs.temperature_f,
+    runs.apparent_temperature_f,
     -- Per-run band, same vocabulary as mart_efficiency_by_temp_band:
-    -- indoor (weather not applicable) / a D14 seed band / weather
-    -- unavailable (outdoor, unmatched or temperature missing).
+    -- indoor (weather not applicable) / a D14 seed band (v1.7: assigned
+    -- by apparent temperature) / weather unavailable (outdoor,
+    -- unmatched or feels-like temperature missing).
     case
         when runs.is_trainer then 'indoor'
         else coalesce(bands.band_label, 'weather unavailable')
@@ -68,6 +70,6 @@ from runs
 left join {{ ref('temperature_bands') }} bands
     on not runs.is_trainer
     and runs.weather_available
-    and {{ temperature_band_range('runs.temperature_f') }}
+    and {{ temperature_band_range('runs.apparent_temperature_f') }}
 left join drift using (activity_id)
 left join band_candidates using (activity_id)

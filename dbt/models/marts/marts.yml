@@ -52,12 +52,12 @@ models:
   - name: mart_efficiency_trend
     description: >
       One row per training week: the weekly median efficiency next to
-      its 28-day rolling median (D13) and the week's temperature-band
-      context (D14, joined from the temperature_bands seed — the bands
-      are never restated in SQL). The rolling median smooths single-week
-      noise; insufficient weeks (D12) stay present and flagged so the
-      dashboard can de-emphasize rather than hide them. Approved
-      framing: pace-at-heart-rate efficiency observed under similar
+      its 28-day rolling median (D13). The rolling median smooths
+      single-week noise; insufficient weeks (D12) stay present and
+      flagged so the dashboard can de-emphasize rather than hide them.
+      Weekly averages are never banded (v1.7): run-level banding lives
+      in mart_efficiency_by_temp_band. Approved framing:
+      pace-at-heart-rate efficiency observed under similar
       conditions — never proof of fitness change.
     columns:
       - name: week_start_date
@@ -83,14 +83,9 @@ models:
           Average HR across the week's valid runs (from
           mart_weekly_training) — intensity context for the trend.
       - name: avg_temperature_f
-        description: The week's average valid-run temperature (°F).
-      - name: temperature_band_key
         description: >
-          D14 band of avg_temperature_f (cold/mild/warm); NULL when the
-          week has no weather-matched valid runs — missing context
-          stays missing, never a default band.
-      - name: temperature_band_label
-        description: Display label of the band.
+          The week's average valid-run temperature (°F, dry-bulb;
+          context only — never banded at weekly grain, v1.7).
       - name: is_sufficient
         description: D12 sufficiency carried from mart_weekly_training.
         tests: [not_null]
@@ -104,11 +99,13 @@ models:
       from a low-efficiency band. Two explicit pseudo-band rows keep
       "not applicable" distinct from "missing": 'indoor' carries
       valid treadmill runs (no outdoor weather applies), and
-      'weather unavailable' carries outdoor valid runs that
-      matched no observation — so the band comparison can never
+      'weather unavailable' carries outdoor valid runs with no matched
+      feels-like temperature — unmatched, or matched without an
+      apparent value (v1.7) — so the band comparison can never
       silently overstate its coverage. Population: runs with valid
-      heart-rate data, banded by matched temperature_f against the
-      seed bounds.
+      heart-rate data, banded by matched apparent_temperature_f
+      (feels-like) against the seed bounds; dry-bulb fallback is
+      deliberately not allowed.
     columns:
       - name: period
         description: Aggregation period; 'all_time' in v1.
@@ -120,7 +117,7 @@ models:
         description: >
           cold / mild / warm (from the seed) or the explicit
           pseudo-bands: indoor (weather not applicable) and no_weather
-          (weather missing for an outdoor run).
+          (no matched feels-like temperature for an outdoor run).
         tests:
           - unique
           - not_null
@@ -137,7 +134,16 @@ models:
       - name: mean_efficiency_m_per_beat
         description: Mean D10 efficiency in the band (secondary, per D11).
       - name: avg_temperature_f
-        description: Average matched temperature in the band; NULL for the no_weather row.
+        description: >
+          Average dry-bulb temperature of the band's runs (context; the
+          band itself is assigned by apparent temperature, v1.7). NULL
+          for the pseudo-band rows.
+      - name: avg_apparent_temperature_f
+        description: >
+          Average feels-like temperature of the band's runs — the
+          banding input, kept for auditability. Deliberately mart-only
+          (v1.7): not surfaced in the app, and future revisions must
+          not "fix" that asymmetry. NULL for the pseudo-band rows.
       - name: avg_pace_min_per_mi
         description: Average pace context for the band.
       - name: avg_hr_bpm
@@ -149,8 +155,9 @@ models:
       the dashboard's eligibility table reads. Carries the run's
       efficiency value (computed for EVERY heart-rate-carrying run),
       the D9 (revised v1.1) validity verdict with its data-validity
-      exclusion reason, weather context with a per-run temperature-band
-      label (indoor / D14 band / weather unavailable), drift context
+      exclusion reason, weather context (dry-bulb and feels-like) with
+      a per-run temperature-band label (indoor / D14 band assigned by
+      apparent temperature, v1.7 / weather unavailable), drift context
       (decoupling or the D16 exclusion reason) when the run is a drift
       candidate, and the D22 HR-band exclusion reason when the run is a
       band candidate. Exists so "why didn't run X count?" is answerable
@@ -174,9 +181,16 @@ models:
       - name: temperature_band_label
         description: >
           Per-run band: 'indoor' (trainer; weather not applicable), a
-          D14 seed band label, or 'weather unavailable' (outdoor with
-          no matched temperature).
+          D14 seed band label (assigned by apparent temperature, v1.7),
+          or 'weather unavailable' (outdoor with no matched feels-like
+          temperature).
         tests: [not_null]
+      - name: apparent_temperature_f
+        description: >
+          The run's matched feels-like temperature (°F) — the banding
+          input (v1.7). Dry-bulb temperature_f stays beside it as
+          context. NULL when unmatched or the observation carries no
+          apparent value.
       - name: decoupling_pct
         description: Drift result when analyzed; NULL for non-candidates.
       - name: drift_exclusion_reason

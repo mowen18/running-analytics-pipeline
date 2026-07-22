@@ -993,3 +993,25 @@ tables, and the efficiency trend marts. This supersedes, for this view
 only, the v1.6 sentence "still connecting sufficient weeks only" and
 the v1.4 rendering convention "insufficient week × band points
 excluded from trend lines."
+
+# Revision v1.7 — 2026-07-22 — Band runs by apparent temperature; drop the weekly trend band (Addendum to D14)
+
+Recorded in `docs/decisions/v1.7-apparent-temperature-banding.md`.
+Summary: the two run-level `temperature_band_range` call sites
+(`mart_efficiency_by_temp_band`, `mart_run_quality`) switch their
+input from `temperature_f` to `apparent_temperature_f` — feels-like
+folds humidity and wind into the banding with no new API fields, raw
+columns, or bands; NOT output-invariant by contract (zero movers on
+the 2026-07-22 warehouse). `mart_efficiency_trend` drops its
+weekly-average band columns (`temperature_band_key` /
+`temperature_band_label`) and their seed join — a chosen interface
+change under the v1.3 rule; `avg_temperature_f` stays as unbanded
+context and joins the trend tooltip. The band ladder becomes a proven
+partition: `no_weather` widens to "no matched feels-like temperature"
+(fallback to `temperature_f` forbidden), the seed leg gains the
+missing `not is_trainer` guard, and a run-grain totality test
+(`assert_temp_band_ladder_assigns_every_valid_run_once`), proven red
+on both failure arms, joins the aggregate conservation test. Seed
+bounds and names unchanged; every existing `avg_temperature_f` stays
+dry-bulb; new feels-like context columns in the two switched marts
+(`avg_apparent_temperature_f` deliberately mart-only).

@@ -16,16 +16,21 @@ banded as (
             order by runs.aerobic_efficiency_m_per_heartbeat
         )                       as median_efficiency,
         avg(runs.aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
+        -- Dry-bulb average of an APPARENT-assigned band (v1.7): context
+        -- only, the banding input is the feels-like column below.
         avg(runs.temperature_f) as avg_temperature_f,
+        avg(runs.apparent_temperature_f) as avg_apparent_temperature_f,
         avg(runs.pace_min_per_mi) as avg_pace_min_per_mi,
         avg(runs.average_hr_bpm) as avg_hr_bpm
     from {{ ref('temperature_bands') }} bands
     -- LEFT JOIN from the seed: every D14 band appears even with zero
     -- runs (count 0, NULL statistics — an empty band is data, not a
-    -- missing row).
+    -- missing row). The trainer guard keeps the ladder a partition:
+    -- indoor wins alone even when a trainer run has matched weather.
     left join valid_runs runs
-        on runs.weather_available
-        and {{ temperature_band_range('runs.temperature_f') }}
+        on not runs.is_trainer
+        and runs.weather_available
+        and {{ temperature_band_range('runs.apparent_temperature_f') }}
     group by bands.band_key, bands.band_label, bands.sort_order
 
 ),
@@ -34,8 +39,12 @@ banded as (
 -- pseudo-band rows rather than vanishing (data-quality principle 1) —
 -- and "not applicable" is kept distinct from "missing":
 --   indoor      = treadmill runs; no outdoor weather APPLIES
---   no_weather  = outdoor runs with no matched observation (unresolved
---                 coordinates or an archive gap); weather is MISSING
+--   no_weather  = outdoor runs with no matched FEELS-LIKE temperature
+--                 (v1.7): no matched observation at all (unresolved
+--                 coordinates or an archive gap), or a matched
+--                 observation that carries no apparent temperature —
+--                 the banding input is MISSING either way, and a
+--                 fallback to dry-bulb is deliberately not allowed.
 -- Both rows are always present, count 0 when empty.
 indoor as (
 
@@ -49,6 +58,7 @@ indoor as (
         ) as median_efficiency,
         avg(aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
         null::numeric as avg_temperature_f,
+        null::numeric as avg_apparent_temperature_f,
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
     from valid_runs
@@ -67,11 +77,16 @@ unbanded as (
             order by aerobic_efficiency_m_per_heartbeat
         ) as median_efficiency,
         avg(aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
+        -- Contractual NULLs even though this row can hold runs that DO
+        -- carry a dry-bulb reading (matched, feels-like missing): the
+        -- pseudo-band rows never show partial temperature context.
         null::numeric as avg_temperature_f,
+        null::numeric as avg_apparent_temperature_f,
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
     from valid_runs
-    where not is_trainer and not weather_available
+    where not is_trainer
+        and (not weather_available or apparent_temperature_f is null)
 
 )
 
@@ -84,6 +99,7 @@ select
     round(median_efficiency::numeric, 4)  as median_efficiency_m_per_beat,
     round(mean_efficiency::numeric, 4)    as mean_efficiency_m_per_beat,
     round(avg_temperature_f::numeric, 1)  as avg_temperature_f,
+    round(avg_apparent_temperature_f::numeric, 1) as avg_apparent_temperature_f,
     round(avg_pace_min_per_mi::numeric, 2) as avg_pace_min_per_mi,
     round(avg_hr_bpm::numeric, 0)         as avg_hr_bpm
 from banded
@@ -99,6 +115,7 @@ select
     round(median_efficiency::numeric, 4),
     round(mean_efficiency::numeric, 4),
     avg_temperature_f,
+    avg_apparent_temperature_f,
     round(avg_pace_min_per_mi::numeric, 2),
     round(avg_hr_bpm::numeric, 0)
 from indoor
@@ -114,6 +131,7 @@ select
     round(median_efficiency::numeric, 4),
     round(mean_efficiency::numeric, 4),
     avg_temperature_f,
+    avg_apparent_temperature_f,
     round(avg_pace_min_per_mi::numeric, 2),
     round(avg_hr_bpm::numeric, 0)
 from unbanded

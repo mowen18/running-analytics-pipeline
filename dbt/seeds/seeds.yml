@@ -5,14 +5,16 @@ seeds:
     description: >
       The D14 temperature bands (< 50°F, 50–70°F, > 70°F), defined ONCE
       here and joined by range wherever a band is needed — never
-      repeated as CASE logic in model SQL. Bounds are INCLUSIVE on both
-      ends and expressed at 1 decimal place, matching the rounding of
-      stg_weather__hourly.temperature_f exactly: cold tops out at 49.9
-      so that 50.0 lands in mild, and warm starts at 70.1 so that 70.0
-      lands in mild, per D14's "50–70°F". A NULL bound means unbounded
-      on that side. assert_temperature_bands_cover_all_temps proves the
-      bands stay gap-free and non-overlapping at 1-dp resolution if
-      anyone edits this file.
+      repeated as CASE logic in model SQL. Since v1.7 the bounds bound
+      the APPARENT (feels-like) temperature. Bounds are INCLUSIVE on
+      both ends and expressed at 1 decimal place, matching the staging
+      rounding of apparent_temperature_f (and temperature_f) exactly:
+      cold tops out at 49.9 so that 50.0 lands in mild, and warm starts
+      at 70.1 so that 70.0 lands in mild, per D14's "50–70°F". A NULL
+      bound means unbounded on that side.
+      assert_temperature_bands_cover_all_temps proves the bands stay
+      gap-free and non-overlapping at 1-dp resolution if anyone edits
+      this file.
     config:
       schema: analytics
       column_types:

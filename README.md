@@ -289,7 +289,6 @@ flowchart LR
     seed_running_analytics_hr_bands --> model_running_analytics_mart_band_weekly
     seed_running_analytics_hr_bands --> model_running_analytics_mart_run_band_segments
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_by_temp_band
-    seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_trend
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
     source_running_analytics_raw_strava_activities --> model_running_analytics_stg_strava__activities
     source_running_analytics_raw_strava_activity_coordinates --> model_running_analytics_stg_strava__activities
@@ -408,11 +407,12 @@ rule in a documented priority order), carried through `fct_runs` and
 **median** efficiency across valid runs (mean shown as secondary);
 a week is trend-worthy only with ≥ 2 valid runs (`is_sufficient`).
 **Trend (D13)** — a 28-day rolling median over run-level efficiency
-smooths single-week noise. **Temperature bands (D14)** — < 50 °F,
+smooths single-week noise. **Temperature bands (D14, revised v1.7)** — < 50 °F,
 50–70 °F, > 70 °F, defined once in the `temperature_bands` seed and
-joined by range; valid runs without matched weather appear in an
-explicit *weather unavailable* row rather than vanishing from the
-comparison.
+joined by range against each run's **apparent (feels-like)
+temperature**, which folds humidity and wind into the banding; valid
+runs without a matched feels-like value appear in an explicit
+*weather unavailable* row rather than vanishing from the comparison.
 
 **Pace at heart-rate band (D22, Revision v1.4)** — the sample-grain
 counterpart to efficiency: pool each run's valid, moving stream samples

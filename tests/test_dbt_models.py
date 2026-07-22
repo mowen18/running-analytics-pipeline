@@ -106,14 +106,21 @@ def insert_activity(
     )
 
 
-def insert_weather(conn, *, hour, temperature, location="12.34_-56.78"):
+def insert_weather(conn, *, hour, temperature, location="12.34_-56.78", apparent="same"):
+    # apparent="same" mirrors temperature (None stays all-NULL: the
+    # missing-marker rows must stay missing in every measurement).
+    # Passing apparent=None with a real temperature builds the partial
+    # observation the v1.7 ladder must not drop: matched weather, no
+    # feels-like value.
+    if apparent == "same":
+        apparent = temperature
     lat, lon = (Decimal(part) for part in location.split("_"))
     conn.execute(
         """
         INSERT INTO raw_weather.hourly
             (location_key, latitude, longitude, weather_timestamp, temperature_c,
-             relative_humidity_pct, payload, fetched_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+             apparent_temperature_c, relative_humidity_pct, payload, fetched_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
         """,
         (
             location,
@@ -121,6 +128,7 @@ def insert_weather(conn, *, hour, temperature, location="12.34_-56.78"):
             lon,
             datetime.fromisoformat(hour),
             temperature,
+            apparent,
             None if temperature is None else 55,
             json.dumps({"time": hour}),
         ),
@@ -157,7 +165,7 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     rows = db.execute(
         """
         SELECT activity_id, weather_available, temperature_c, weather_match_minutes,
-               long_run_eligible, pace_min_per_mi
+               long_run_eligible, pace_min_per_mi, apparent_temperature_c
         FROM analytics.fct_runs ORDER BY activity_id
         """
     ).fetchall()
@@ -169,6 +177,9 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     assert outdoor[3] == 47
     assert outdoor[4] is True  # 50 min moving >= the 45-minute long-run bar
     assert outdoor[5] == Decimal("8.05")
+    # Feels-like rides the same lineage raw -> fct (v1.7 banding input);
+    # the fixture mirrors it from temperature by default.
+    assert outdoor[6] == Decimal("20.0")
 
     assert treadmill[1] is False  # no coordinates: explicit, not an error
     assert treadmill[2] is None  # missing weather stays NULL, never zero
@@ -182,12 +193,16 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     assert resolved[3] == 47
 
 
-def outdoor_run(db, activity_id, *, day, hr, cell="12.34_-56.78", temp_c=15.0, **kwargs):
+def outdoor_run(
+    db, activity_id, *, day, hr, cell="12.34_-56.78", temp_c=15.0, apparent_c="same", **kwargs
+):
     """A valid-shaped run plus a matching observation at its cell.
 
     Defaults give speed 200 m/min (10 km in 50 min), so efficiency is
     200 / hr — hand-checkable. temp_c=None skips the weather row so the
-    run lands in the explicit no_weather pseudo-band.
+    run lands in the explicit no_weather pseudo-band. apparent_c=None
+    keeps the observation but strips its feels-like value (v1.7 gap
+    witness); the default mirrors temp_c.
     """
     lat, lon = (float(part) for part in cell.split("_"))
     insert_activity(
@@ -200,15 +215,18 @@ def outdoor_run(db, activity_id, *, day, hr, cell="12.34_-56.78", temp_c=15.0, *
         **kwargs,
     )
     if temp_c is not None:
-        insert_weather(db, hour=f"{day}T09:00:00+00:00", temperature=temp_c, location=cell)
+        insert_weather(
+            db, hour=f"{day}T09:00:00+00:00", temperature=temp_c, location=cell, apparent=apparent_c
+        )
 
 
 @pytest.mark.integration
 def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     # ── Week of Mon 2026-06-01: two valid runs (sufficient per D12).
-    # temp_c values are chosen so temperature_f lands exactly on the D14
-    # band edges after staging's 1-dp rounding: 9.94°C -> 49.9°F (cold),
-    # 10.0°C -> 50.0°F (mild).
+    # temp_c values are chosen so the staged 1-dp value lands exactly on
+    # the D14 band edges: 9.94°C -> 49.9°F (cold), 10.0°C -> 50.0°F
+    # (mild). Bands read the apparent temperature (v1.7), which mirrors
+    # dry-bulb here by default — the edges hold on the banding axis.
     outdoor_run(db, 1, day="2026-06-02", hr=140.0, cell="10.00_10.00", temp_c=9.94)
     outdoor_run(db, 2, day="2026-06-04", hr=150.0, cell="11.00_11.00", temp_c=10.0)
     # ── Week of Mon 2026-06-08: a valid run without weather, two runs
@@ -225,10 +243,22 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     )
     outdoor_run(db, 11, day="2026-06-08", hr=210.0)  # outside sanity band
     outdoor_run(db, 12, day="2026-06-14", hr=140.0, distance=1000.0)  # ~80 min/mi
-    # ── Week of Mon 2026-06-15: the 70°F edge — 21.11°C -> 70.0°F stays
-    # mild per D14's "50-70"; 21.17°C -> 70.1°F is warm.
-    outdoor_run(db, 8, day="2026-06-16", hr=145.0, cell="12.00_12.00", temp_c=21.11)
-    outdoor_run(db, 9, day="2026-06-17", hr=145.0, cell="13.00_13.00", temp_c=21.17)
+    # ── Week of Mon 2026-06-15: the 70°F edge on the banding axis —
+    # bands read the APPARENT temperature (v1.7). Run 8 is the
+    # deliberate migration witness: dry-bulb 21.11°C -> 70.0°F banded
+    # mild pre-v1.7; apparent 21.17°C -> 70.1°F bands warm now. Run 9
+    # diverges in value (73.0°F feels-like) but not in band.
+    outdoor_run(
+        db, 8, day="2026-06-16", hr=145.0, cell="12.00_12.00", temp_c=21.11, apparent_c=21.17
+    )
+    outdoor_run(
+        db, 9, day="2026-06-17", hr=145.0, cell="13.00_13.00", temp_c=21.17, apparent_c=22.78
+    )
+    # Gap witness (v1.7): a matched observation carrying dry-bulb but no
+    # feels-like value — weather_available stays true while the banding
+    # input is NULL. Must land in no_weather ("no matched feels-like
+    # temperature"), never vanish.
+    outdoor_run(db, 13, day="2026-06-18", hr=145.0, cell="15.00_15.00", apparent_c=None)
     # ── Valid treadmill run (isolated week of Mon 2026-05-18):
     # must land in the explicit 'indoor' pseudo-band, not 'no_weather'.
     insert_activity(
@@ -240,6 +270,11 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         trainer=True,
         average_heartrate=145.0,
     )
+    # Trainer witness (v1.7): a trainer run WITH coordinates and matched
+    # weather — 'indoor' must win alone. Before the seed-leg trainer
+    # guard it also matched a seed band: the double-count the run-grain
+    # totality test catches and the aggregate conservation test cannot.
+    outdoor_run(db, 14, day="2026-05-21", hr=145.0, cell="14.00_14.00", trainer=True)
     db.commit()
 
     result = run_dbt("build")
@@ -265,6 +300,8 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         10: None,  # treadmill runs are valid — weather isn't a rule
         11: "average HR outside 90–200 bpm sanity band",
         12: "pace outside 4.0–20.0 min/mi bounds",
+        13: None,  # matched weather without feels-like: still valid
+        14: None,  # trainer with matched weather: still valid
     }
 
     # Efficiency traces to documented fields: 200 m/min at 140 bpm.
@@ -283,27 +320,25 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         """
     ).fetchall()
     assert [(w[0], w[1], w[2]) for w in weeks] == [
-        ("2026-05-18", 1, False),  # the treadmill run's isolated week
+        ("2026-05-18", 2, True),  # treadmill + the trainer witness (v1.7)
         ("2026-06-01", 2, True),
         ("2026-06-08", 3, True),  # race + hard effort now count (v1.1)
-        ("2026-06-15", 2, True),
+        ("2026-06-15", 3, True),  # the gap witness joins the week (v1.7)
     ]
     # Week 1 median interpolates between 200/150 and 200/140.
     assert float(weeks[1][3]) == pytest.approx((200.0 / 150.0 + 200.0 / 140.0) / 2, abs=0.0001)
 
     # Trend mart: the 28-day window ending Sun 2026-06-21 spans all
-    # seven valid runs after Sun 2026-05-24 (the treadmill run on 05-20
-    # falls outside); the week's band comes from its avg temperature.
-    (rolling_count, rolling_median, band) = db.execute(
+    # eight valid runs after Sun 2026-05-24 (runs 10 and 14 in the
+    # 05-18 week fall outside). Weekly averages are never banded (v1.7).
+    (rolling_count, rolling_median) = db.execute(
         """
-        SELECT rolling_valid_run_count, rolling_median_efficiency,
-               temperature_band_key
+        SELECT rolling_valid_run_count, rolling_median_efficiency
         FROM analytics.mart_efficiency_trend WHERE week_start_date = '2026-06-15'
         """
     ).fetchone()
-    assert rolling_count == 7
+    assert rolling_count == 8
     assert float(rolling_median) == pytest.approx(200.0 / 145.0, abs=0.0001)
-    assert band == "warm"  # avg(70.0, 70.1) = 70.05 -> rounds into warm
 
     # Band mart: every band present, boundaries exact, nothing dropped.
     bands = {
@@ -316,15 +351,18 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         ).fetchall()
     }
     assert bands["cold"][0] == 1  # 49.9°F
-    # 50.0°F and 70.0°F (both edges inclusive) plus the race and the
-    # hard effort at the 59.0°F default.
-    assert bands["mild"][0] == 4
-    assert bands["warm"][0] == 1  # 70.1°F
-    # "Not applicable" and "missing" stay distinct: the treadmill run is
-    # indoor, the coordinate-less outdoor run is weather-unavailable.
-    assert bands["indoor"][0] == 1
-    assert bands["no_weather"][0] == 1
-    assert sum(count for count, _ in bands.values()) == 8  # conservation
+    # The 50.0°F edge plus the race and the hard effort at the 59.0°F
+    # default. Run 8 left this band with v1.7: its 70.1°F feels-like
+    # bands warm even though its 70.0°F dry-bulb banded mild before.
+    assert bands["mild"][0] == 3
+    assert bands["warm"][0] == 2  # the migration witness + 73.0°F
+    # "Not applicable" and "missing" stay distinct — and indoor wins
+    # alone for the trainer run with matched weather (v1.7 guard).
+    assert bands["indoor"][0] == 2
+    # Unmatched outdoor + matched-without-feels-like (v1.7): both are
+    # explicit rows, never silent drops.
+    assert bands["no_weather"][0] == 2
+    assert sum(count for count, _ in bands.values()) == 10  # conservation
 
     # Run-level quality mart: every run visible with its verdict, band,
     # and an efficiency value even when invalid.
@@ -336,13 +374,16 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
             "FROM analytics.mart_run_quality"
         ).fetchall()
     }
-    assert len(quality) == 12  # every run, valid or not
+    assert len(quality) == 14  # every run, valid or not
     assert quality[4][0] is None  # the race counts now (v1.1)
     assert quality[11][0] == "average HR outside 90–200 bpm sanity band"
     assert quality[11][2] is not None  # invalid runs keep their value
-    assert quality[1][1] == "< 50°F"  # banded per-run by its own temp
+    assert quality[1][1] == "< 50°F"  # banded per-run by its own feels-like
+    assert quality[8][1] == "> 70°F"  # the migration witness, on apparent
     assert quality[3][1] == "weather unavailable"  # outdoor, unmatched
+    assert quality[13][1] == "weather unavailable"  # matched, no feels-like
     assert quality[10][1] == "indoor"  # trainer: not applicable, not missing
+    assert quality[14][1] == "indoor"  # trainer wins over matched weather
     assert quality[5][2] is None  # no HR -> no value (missing, not zero)
 
 
@@ -599,6 +640,39 @@ def test_relationships_test_fails_on_orphan_band_candidate(db):
 
     result = run_dbt("test", "--select", selector)
     assert result.returncode == 0, f"relationships test still failing:\n{result.stdout}"
+
+
+@pytest.mark.integration
+def test_totality_test_fails_on_unassignable_run(db):
+    # The D14 ladder totality test was proven red-first on both arms
+    # (commit 2c2dba2: a matched run without feels-like -> 0 assignments,
+    # a trainer run with matched weather -> 2); this re-proves the
+    # zero-assignment arm on every run. The mart and the test derive
+    # from the same fct_runs, so no raw fixture can break the partition
+    # once the ladder is correct — the bad row must be injected into the
+    # built table.
+    outdoor_run(db, 1, day="2026-06-02", hr=140.0)
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    # Insert AFTER the build and test WITHOUT rebuilding: a rebuild
+    # would erase the row and a green run would prove nothing. NULL
+    # is_trainer/weather_available fall through every ladder leg.
+    db.execute("INSERT INTO analytics.fct_runs (activity_id, is_valid) VALUES (999999999, true)")
+    db.commit()
+
+    selector = "assert_temp_band_ladder_assigns_every_valid_run_once"
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode != 0, "totality test should fail on an unassignable valid run"
+    assert selector in result.stdout
+
+    db.execute("DELETE FROM analytics.fct_runs WHERE activity_id = 999999999")
+    db.commit()
+
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode == 0, f"totality test still failing:\n{result.stdout}"
 
 
 @pytest.mark.integration
