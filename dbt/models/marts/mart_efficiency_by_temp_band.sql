@@ -25,7 +25,7 @@ banded as (
     -- missing row).
     left join valid_runs runs
         on runs.weather_available
-        and {{ temperature_band_range('runs.temperature_f') }}
+        and {{ temperature_band_range('runs.apparent_temperature_f') }}
     group by bands.band_key, bands.band_label, bands.sort_order
 
 ),
