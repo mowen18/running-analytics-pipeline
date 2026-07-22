@@ -142,6 +142,20 @@
   0600). The STRAVA_REFRESH_TOKEN in .env is bootstrap-only and goes stale
   after the first refresh — that is by design, not a bug.
 
+## Style for notes/
+
+Write all content in notes/ in plain, simple language (ASD-STE100
+style).
+
+- Short sentences and one idea per sentence, when possible.
+- Active voice. Say who or what does each action.
+- Common words. No invented metaphors or coined phrases.
+- Keep necessary technical terms (median, mart, idempotent) and
+  define each inline at first use.
+
+Example: write "Check where the filter lives before you edit,"
+not "Execute a verification fork prior to modification."
+
 ## Verifying chart changes
 
 Any change that affects a rendered chart is verified by looking at the
