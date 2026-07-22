@@ -70,7 +70,7 @@
   pinned by assert_band_weekly_matches_segment_mart (velocity space).
   Addendums: docs/decisions/v1.6-band-run-scatter.md + the v1.6.1
   entry appended to docs/PROJECT_PLAN.md.
-- Current phase: v1.7 merged to main (2026-07-22). D14's banding input
+- Revision v1.7 merged to main (2026-07-22). D14's banding input
   revised: run-level bands are assigned by apparent_temperature_f
   (feels-like — humidity and wind fold into the banding; no new API
   fields, raw columns, or bands; seed bounds and names unchanged, they
@@ -89,6 +89,26 @@
   renders as the "Air °F"/"Feels-like °F" pair. Zero band movers on
   the 2026-07-22 warehouse (pre-registered and verified). Addendum:
   docs/decisions/v1.7-apparent-temperature-banding.md.
+- Current phase: v1.8 merged to main (2026-07-22). The D14 seed is
+  five bands — <50 / 50–70 / 70–80 / 80–90 / >90 °F — splitting
+  v1.7's open top band at NOAA heat-index anchors (80/90°F) that
+  coincide with empirical gaps in the observed feels-like
+  distribution. Stopping rule (in the addendum AND seeds.yml): a band
+  boundary requires BOTH an external anchor AND an empirical gap —
+  never add or move a bound without a revision satisfying both. The
+  >90 band is survival-censored (extreme-heat runs fail the 15-min
+  floor; n=0/n=1 is the finding — documented in marts.yml + README
+  known limitations, never a fair comparison). Keys are stable
+  machine identifiers: warm kept its key when its bounds narrowed
+  (label "70–80°F"); new keys hot / very_hot; banding input and the
+  50/70 boundaries unchanged from v1.7. App: five-blue ordinal ramp
+  (documented sequential ramp, 100-step stride, ordinal-validated),
+  chart height 266, dry-bulb figures labeled "air" everywhere they
+  render near the feels-like pair. Redistribution reproduced exactly
+  as pre-registered (valid 3/7/1, full-row 3/9/6); no red proof by
+  declaration — the boundary fixtures (80.0/90.0/95.0) extend an
+  already-green partition test. Addendum:
+  docs/decisions/v1.8-five-band-recalibration.md.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and
