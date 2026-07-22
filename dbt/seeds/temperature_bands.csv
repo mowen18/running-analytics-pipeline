@@ -1,4 +1,6 @@
 band_key,band_label,min_temperature_f,max_temperature_f,sort_order
 cold,< 50°F,,49.9,1
 mild,50–70°F,50.0,70.0,2
-warm,> 70°F,70.1,,3
+warm,70–80°F,70.1,80.0,3
+hot,80–90°F,80.1,90.0,4
+very_hot,> 90°F,90.1,,5

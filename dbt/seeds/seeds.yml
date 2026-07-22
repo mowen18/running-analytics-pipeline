@@ -3,15 +3,21 @@ version: 2
 seeds:
   - name: temperature_bands
     description: >
-      The D14 temperature bands (< 50°F, 50–70°F, > 70°F), defined ONCE
-      here and joined by range wherever a band is needed — never
-      repeated as CASE logic in model SQL. Since v1.7 the bounds bound
-      the APPARENT (feels-like) temperature. Bounds are INCLUSIVE on
-      both ends and expressed at 1 decimal place, matching the staging
-      rounding of apparent_temperature_f (and temperature_f) exactly:
-      cold tops out at 49.9 so that 50.0 lands in mild, and warm starts
-      at 70.1 so that 70.0 lands in mild, per D14's "50–70°F". A NULL
-      bound means unbounded on that side.
+      The D14 temperature bands (< 50°F, 50–70°F, 70–80°F, 80–90°F,
+      > 90°F — five since v1.8), defined ONCE here and joined by range
+      wherever a band is needed — never repeated as CASE logic in
+      model SQL. Since v1.7 the bounds bound the APPARENT (feels-like)
+      temperature. Bounds are INCLUSIVE on both ends and expressed at
+      1 decimal place, matching the staging rounding of
+      apparent_temperature_f (and temperature_f) exactly: cold tops
+      out at 49.9 so that 50.0 lands in mild, 70.0 lands in mild
+      (warm starts at 70.1), 80.0 lands in warm (hot starts at 80.1),
+      and 90.0 lands in hot (very_hot starts at 90.1). A NULL bound
+      means unbounded on that side. Stopping rule (v1.8): a new band
+      boundary requires BOTH an external anchor AND an empirical gap
+      in the observed feels-like distribution — do not add or move a
+      bound without a revision addendum satisfying both (see
+      docs/decisions/v1.8-five-band-recalibration.md).
       assert_temperature_bands_cover_all_temps proves the bands stay
       gap-free and non-overlapping at 1-dp resolution if anyone edits
       this file.
@@ -25,7 +31,10 @@ seeds:
         sort_order: integer
     columns:
       - name: band_key
-        description: Stable machine-readable key (cold / mild / warm).
+        description: >
+          Stable machine-readable key (cold / mild / warm / hot /
+          very_hot). Keys are identifiers, labels are display: warm
+          kept its key when v1.8 narrowed its bounds.
         tests: [unique, not_null]
       - name: band_label
         description: Display label exactly as written in D14.
@@ -35,7 +44,7 @@ seeds:
       - name: max_temperature_f
         description: Inclusive upper bound, °F at 1 dp; NULL = unbounded above.
       - name: sort_order
-        description: Cold-to-warm display order.
+        description: Cold-to-hot display order.
         tests: [unique, not_null]
 
   - name: hr_bands

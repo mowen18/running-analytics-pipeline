@@ -21,13 +21,16 @@ from running_pipeline.database import get_connection
 BLUE = "#2a78d6"
 GRAY = "#898781"
 INK_SECONDARY = "#52514e"
-# The three D14 bands use the ordinal blue ramp; the two pseudo-bands
+# The five D14 bands use the ordinal blue ramp (documented sequential
+# ramp, even 100-step stride, ordinal-validated); the two pseudo-bands
 # (indoor = weather not applicable, no_weather = weather missing) sit
 # outside the temperature scale and get neutral grays instead.
 ORDINAL_RAMP = {
     "cold": "#86b6ef",
-    "mild": "#2a78d6",
-    "warm": "#104281",
+    "mild": "#5598e7",
+    "warm": "#2a78d6",
+    "hot": "#1c5cab",
+    "very_hot": "#104281",
     "indoor": "#898781",
     "no_weather": "#c3c2b7",
 }
@@ -428,7 +431,7 @@ def efficiency_view():
             .encode(y=band_y, x=alt.X("label_x:Q"), text="n_label:N")
         )
         st.altair_chart(
-            themed(alt.layer(bars, labels).properties(height=190)), use_container_width=True
+            themed(alt.layer(bars, labels).properties(height=266)), use_container_width=True
         )
         st.caption(
             "Median of per-run efficiency across runs with valid HR data in "

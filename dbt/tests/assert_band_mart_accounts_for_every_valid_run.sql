@@ -1,5 +1,6 @@
--- Conservation check: the band mart's counts (three D14 bands + the
--- explicit no_weather row) must sum to the total number of valid runs
+-- Conservation check: the band mart's counts (the D14 seed bands plus
+-- the explicit indoor and no_weather rows — band-count agnostic) must
+-- sum to the total number of valid runs
 -- in fct_runs — the core relation the marts read. A shortfall means
 -- runs are being silently dropped from the comparison; an excess means
 -- a run landed in two bands.

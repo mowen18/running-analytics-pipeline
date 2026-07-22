@@ -94,9 +94,13 @@ models:
     description: >
       One row per D14 temperature band per period (v1 ships 'all_time'
       only; the period column exists so finer grains can be added
-      without breaking consumers). All three seed bands always appear —
+      without breaking consumers). All five seed bands always appear —
       an empty band has count 0 and NULL statistics, distinguishable
-      from a low-efficiency band. Two explicit pseudo-band rows keep
+      from a low-efficiency band. The > 90°F band's statistics are
+      survival-censored (v1.8): extreme-heat runs are systematically
+      cut short and fail the 15-minute validity floor, so that band
+      only ever holds completed extreme-heat runs — its n=0/n=1 is
+      the finding, never a fair efficiency comparison. Two explicit pseudo-band rows keep
       "not applicable" distinct from "missing": 'indoor' carries
       valid treadmill runs (no outdoor weather applies), and
       'weather unavailable' carries outdoor valid runs with no matched
@@ -115,14 +119,15 @@ models:
               arguments: {values: ['all_time']}
       - name: band_key
         description: >
-          cold / mild / warm (from the seed) or the explicit
-          pseudo-bands: indoor (weather not applicable) and no_weather
-          (no matched feels-like temperature for an outdoor run).
+          cold / mild / warm / hot / very_hot (from the seed) or the
+          explicit pseudo-bands: indoor (weather not applicable) and
+          no_weather (no matched feels-like temperature for an outdoor
+          run).
         tests:
           - unique
           - not_null
           - accepted_values:
-              arguments: {values: [cold, mild, warm, indoor, no_weather]}
+              arguments: {values: [cold, mild, warm, hot, very_hot, indoor, no_weather]}
       - name: band_label
         description: Display label (D14 wording, 'indoor', or 'weather unavailable').
         tests: [not_null]
