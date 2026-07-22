@@ -165,7 +165,7 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     rows = db.execute(
         """
         SELECT activity_id, weather_available, temperature_c, weather_match_minutes,
-               long_run_eligible, pace_min_per_mi
+               long_run_eligible, pace_min_per_mi, apparent_temperature_c
         FROM analytics.fct_runs ORDER BY activity_id
         """
     ).fetchall()
@@ -177,6 +177,9 @@ def test_dbt_build_matches_weather_and_flags_eligibility(db):
     assert outdoor[3] == 47
     assert outdoor[4] is True  # 50 min moving >= the 45-minute long-run bar
     assert outdoor[5] == Decimal("8.05")
+    # Feels-like rides the same lineage raw -> fct (v1.7 banding input);
+    # the fixture mirrors it from temperature by default.
+    assert outdoor[6] == Decimal("20.0")
 
     assert treadmill[1] is False  # no coordinates: explicit, not an error
     assert treadmill[2] is None  # missing weather stays NULL, never zero
@@ -637,6 +640,39 @@ def test_relationships_test_fails_on_orphan_band_candidate(db):
 
     result = run_dbt("test", "--select", selector)
     assert result.returncode == 0, f"relationships test still failing:\n{result.stdout}"
+
+
+@pytest.mark.integration
+def test_totality_test_fails_on_unassignable_run(db):
+    # The D14 ladder totality test was proven red-first on both arms
+    # (commit 2c2dba2: a matched run without feels-like -> 0 assignments,
+    # a trainer run with matched weather -> 2); this re-proves the
+    # zero-assignment arm on every run. The mart and the test derive
+    # from the same fct_runs, so no raw fixture can break the partition
+    # once the ladder is correct — the bad row must be injected into the
+    # built table.
+    outdoor_run(db, 1, day="2026-06-02", hr=140.0)
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    # Insert AFTER the build and test WITHOUT rebuilding: a rebuild
+    # would erase the row and a green run would prove nothing. NULL
+    # is_trainer/weather_available fall through every ladder leg.
+    db.execute("INSERT INTO analytics.fct_runs (activity_id, is_valid) VALUES (999999999, true)")
+    db.commit()
+
+    selector = "assert_temp_band_ladder_assigns_every_valid_run_once"
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode != 0, "totality test should fail on an unassignable valid run"
+    assert selector in result.stdout
+
+    db.execute("DELETE FROM analytics.fct_runs WHERE activity_id = 999999999")
+    db.commit()
+
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode == 0, f"totality test still failing:\n{result.stdout}"
 
 
 @pytest.mark.integration

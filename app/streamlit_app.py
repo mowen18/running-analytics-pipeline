@@ -171,7 +171,10 @@ RUN_QUALITY_COLUMNS = {
     "exclusion_reason": st.column_config.TextColumn("Why excluded"),
     "long_run_eligible": None,
     "weather_available": None,  # the band column carries the outcome
-    "temperature_f": st.column_config.NumberColumn("°F", format="%.1f"),
+    "temperature_f": st.column_config.NumberColumn("Air °F", format="%.1f"),
+    # The banding input (v1.7) — shown beside dry-bulb so the pair
+    # explains itself without a caption.
+    "apparent_temperature_f": st.column_config.NumberColumn("Feels-like °F", format="%.1f"),
     "temperature_band_label": st.column_config.TextColumn("Band"),
     "decoupling_pct": st.column_config.NumberColumn("Decoupling %", format="%.2f"),
     "drift_exclusion_reason": st.column_config.TextColumn("Drift note"),
@@ -430,7 +433,8 @@ def efficiency_view():
         st.caption(
             "Median of per-run efficiency across runs with valid HR data in "
             "each band — runs are banded individually by their own matched "
-            "temperature, never averaged by week."
+            "apparent temperature (feels-like, which folds in humidity and "
+            "wind), never averaged by week."
         )
 
     st.subheader("Pace at heart-rate band")

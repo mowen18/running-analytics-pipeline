@@ -54,6 +54,7 @@ select
     runs.long_run_eligible,
     runs.weather_available,
     runs.temperature_f,
+    runs.apparent_temperature_f,
     -- Per-run band, same vocabulary as mart_efficiency_by_temp_band:
     -- indoor (weather not applicable) / a D14 seed band (v1.7: assigned
     -- by apparent temperature) / weather unavailable (outdoor,

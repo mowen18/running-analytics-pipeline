@@ -16,7 +16,10 @@ banded as (
             order by runs.aerobic_efficiency_m_per_heartbeat
         )                       as median_efficiency,
         avg(runs.aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
+        -- Dry-bulb average of an APPARENT-assigned band (v1.7): context
+        -- only, the banding input is the feels-like column below.
         avg(runs.temperature_f) as avg_temperature_f,
+        avg(runs.apparent_temperature_f) as avg_apparent_temperature_f,
         avg(runs.pace_min_per_mi) as avg_pace_min_per_mi,
         avg(runs.average_hr_bpm) as avg_hr_bpm
     from {{ ref('temperature_bands') }} bands
@@ -55,6 +58,7 @@ indoor as (
         ) as median_efficiency,
         avg(aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
         null::numeric as avg_temperature_f,
+        null::numeric as avg_apparent_temperature_f,
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
     from valid_runs
@@ -73,7 +77,11 @@ unbanded as (
             order by aerobic_efficiency_m_per_heartbeat
         ) as median_efficiency,
         avg(aerobic_efficiency_m_per_heartbeat) as mean_efficiency,
+        -- Contractual NULLs even though this row can hold runs that DO
+        -- carry a dry-bulb reading (matched, feels-like missing): the
+        -- pseudo-band rows never show partial temperature context.
         null::numeric as avg_temperature_f,
+        null::numeric as avg_apparent_temperature_f,
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
     from valid_runs
@@ -91,6 +99,7 @@ select
     round(median_efficiency::numeric, 4)  as median_efficiency_m_per_beat,
     round(mean_efficiency::numeric, 4)    as mean_efficiency_m_per_beat,
     round(avg_temperature_f::numeric, 1)  as avg_temperature_f,
+    round(avg_apparent_temperature_f::numeric, 1) as avg_apparent_temperature_f,
     round(avg_pace_min_per_mi::numeric, 2) as avg_pace_min_per_mi,
     round(avg_hr_bpm::numeric, 0)         as avg_hr_bpm
 from banded
@@ -106,6 +115,7 @@ select
     round(median_efficiency::numeric, 4),
     round(mean_efficiency::numeric, 4),
     avg_temperature_f,
+    avg_apparent_temperature_f,
     round(avg_pace_min_per_mi::numeric, 2),
     round(avg_hr_bpm::numeric, 0)
 from indoor
@@ -121,6 +131,7 @@ select
     round(median_efficiency::numeric, 4),
     round(mean_efficiency::numeric, 4),
     avg_temperature_f,
+    avg_apparent_temperature_f,
     round(avg_pace_min_per_mi::numeric, 2),
     round(avg_hr_bpm::numeric, 0)
 from unbanded
