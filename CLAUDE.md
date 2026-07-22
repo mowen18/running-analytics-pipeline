@@ -57,7 +57,7 @@
   scheduler path (10/10 task successes, idempotent no-op counts).
   Airflow is a THIN scheduling and observability layer only; see the
   scope constraints below.
-- Current phase: v1.6 + v1.6.1 merged to main (2026-07-20).
+- Revision v1.6 + v1.6.1 merged to main (2026-07-20).
   mart_run_band_segments (run × band grain, explicit-column projection
   of core fct_run_band_segments + the hr_bands seed — no layer-matrix
   change; the app allow-list grew by exactly this name, red-first)
@@ -70,6 +70,25 @@
   pinned by assert_band_weekly_matches_segment_mart (velocity space).
   Addendums: docs/decisions/v1.6-band-run-scatter.md + the v1.6.1
   entry appended to docs/PROJECT_PLAN.md.
+- Current phase: v1.7 merged to main (2026-07-22). D14's banding input
+  revised: run-level bands are assigned by apparent_temperature_f
+  (feels-like — humidity and wind fold into the banding; no new API
+  fields, raw columns, or bands; seed bounds and names unchanged, they
+  now bound apparent temperature). mart_efficiency_trend dropped
+  temperature_band_key/-label and its seed join (weekly averages are
+  never banded — a chosen v1.3-rule interface change);
+  avg_temperature_f stays dry-bulb context and joined the trend
+  tooltip. The band ladder is a proven partition: no_weather means "no
+  matched feels-like temperature" (dry-bulb fallback deliberately
+  forbidden), the seed leg carries not is_trainer, and the run-grain
+  assert_temp_band_ladder_assigns_every_valid_run_once (red-first on
+  both arms; edited in LOCKSTEP with mart_efficiency_by_temp_band)
+  guards it alongside the aggregate conservation test. Context
+  columns: avg_apparent_temperature_f is deliberately mart-only —
+  never surface it in the app; mart_run_quality.apparent_temperature_f
+  renders as the "Air °F"/"Feels-like °F" pair. Zero band movers on
+  the 2026-07-22 warehouse (pre-registered and verified). Addendum:
+  docs/decisions/v1.7-apparent-temperature-banding.md.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and
