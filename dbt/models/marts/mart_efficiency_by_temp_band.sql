@@ -22,9 +22,11 @@ banded as (
     from {{ ref('temperature_bands') }} bands
     -- LEFT JOIN from the seed: every D14 band appears even with zero
     -- runs (count 0, NULL statistics — an empty band is data, not a
-    -- missing row).
+    -- missing row). The trainer guard keeps the ladder a partition:
+    -- indoor wins alone even when a trainer run has matched weather.
     left join valid_runs runs
-        on runs.weather_available
+        on not runs.is_trainer
+        and runs.weather_available
         and {{ temperature_band_range('runs.apparent_temperature_f') }}
     group by bands.band_key, bands.band_label, bands.sort_order
 
@@ -34,8 +36,12 @@ banded as (
 -- pseudo-band rows rather than vanishing (data-quality principle 1) —
 -- and "not applicable" is kept distinct from "missing":
 --   indoor      = treadmill runs; no outdoor weather APPLIES
---   no_weather  = outdoor runs with no matched observation (unresolved
---                 coordinates or an archive gap); weather is MISSING
+--   no_weather  = outdoor runs with no matched FEELS-LIKE temperature
+--                 (v1.7): no matched observation at all (unresolved
+--                 coordinates or an archive gap), or a matched
+--                 observation that carries no apparent temperature —
+--                 the banding input is MISSING either way, and a
+--                 fallback to dry-bulb is deliberately not allowed.
 -- Both rows are always present, count 0 when empty.
 indoor as (
 
@@ -71,7 +77,8 @@ unbanded as (
         avg(pace_min_per_mi) as avg_pace_min_per_mi,
         avg(average_hr_bpm) as avg_hr_bpm
     from valid_runs
-    where not is_trainer and not weather_available
+    where not is_trainer
+        and (not weather_available or apparent_temperature_f is null)
 
 )
 

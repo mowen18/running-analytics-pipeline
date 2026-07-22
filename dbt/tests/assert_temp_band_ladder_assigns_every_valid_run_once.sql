@@ -19,7 +19,8 @@ assignments as (
     select runs.activity_id
     from valid_runs runs
     inner join {{ ref('temperature_bands') }} bands
-        on runs.weather_available
+        on not runs.is_trainer
+        and runs.weather_available
         and {{ temperature_band_range('runs.apparent_temperature_f') }}
 
     union all
@@ -30,7 +31,8 @@ assignments as (
 
     select activity_id
     from valid_runs
-    where not is_trainer and not weather_available
+    where not is_trainer
+        and (not weather_available or apparent_temperature_f is null)
 
 )
 
