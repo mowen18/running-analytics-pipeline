@@ -152,7 +152,7 @@ EFFICIENCY_TREND_COLUMNS = {
     # Intensity context: aggregates no longer filter on effort (v1.1),
     # so the mix behind each weekly point stays visible.
     "avg_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
-    "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
+    "avg_temperature_f": st.column_config.NumberColumn("Avg air °F", format="%.1f"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
 }
 
@@ -210,7 +210,7 @@ BAND_TREND_COLUMNS = {
         "28-day median (min/mi)", format="%.2f"
     ),
     "rolling_band_run_count": st.column_config.NumberColumn("28-day (n)"),
-    "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
+    "avg_temperature_f": st.column_config.NumberColumn("Avg air °F", format="%.1f"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
 }
 
@@ -363,7 +363,7 @@ def efficiency_view():
                     ),
                     alt.Tooltip("valid_run_count:Q", title="valid runs (n)"),
                     alt.Tooltip("avg_hr_bpm:Q", title="avg HR (bpm)", format=".0f"),
-                    alt.Tooltip("avg_temperature_f:Q", title="avg temp (°F)", format=".1f"),
+                    alt.Tooltip("avg_temperature_f:Q", title="avg air temp (°F)", format=".1f"),
                 ],
             )
             .properties(height=320)
@@ -529,7 +529,7 @@ WEEKLY_COLUMNS = {
     ),
     "mean_efficiency_m_per_beat": st.column_config.NumberColumn("Mean eff (m/beat)", format="%.4f"),
     "avg_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
-    "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
+    "avg_temperature_f": st.column_config.NumberColumn("Avg air °F", format="%.1f"),
     "avg_relative_humidity_pct": st.column_config.NumberColumn("Avg RH %", format="%.0f"),
     "valid_runs_with_weather": st.column_config.NumberColumn("Valid w/ weather (n)"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
@@ -591,7 +591,7 @@ DRIFT_TREND_COLUMNS = {
     ),
     "rolling_drift_run_count": st.column_config.NumberColumn("28-day (n)"),
     "avg_moving_time_min": st.column_config.NumberColumn("Avg moving (min)", format="%.1f"),
-    "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
+    "avg_temperature_f": st.column_config.NumberColumn("Avg air °F", format="%.1f"),
     "runs_with_weather": st.column_config.NumberColumn("With weather (n)"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
 }
@@ -626,7 +626,7 @@ def drift_view():
                 alt.Tooltip("decoupling_pct:Q", title="decoupling %", format=".2f"),
                 alt.Tooltip("analysis_window_min:Q", title="window (min)", format=".1f"),
                 alt.Tooltip("valid_sample_count:Q", title="valid samples (n)"),
-                alt.Tooltip("temperature_f:Q", title="°F", format=".1f"),
+                alt.Tooltip("temperature_f:Q", title="air °F", format=".1f"),
             ],
         )
         .properties(height=320)
