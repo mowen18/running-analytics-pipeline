@@ -289,7 +289,6 @@ flowchart LR
     seed_running_analytics_hr_bands --> model_running_analytics_mart_band_weekly
     seed_running_analytics_hr_bands --> model_running_analytics_mart_run_band_segments
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_by_temp_band
-    seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_trend
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
     source_running_analytics_raw_strava_activities --> model_running_analytics_stg_strava__activities
     source_running_analytics_raw_strava_activity_coordinates --> model_running_analytics_stg_strava__activities

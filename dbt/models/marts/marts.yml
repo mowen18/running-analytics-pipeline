@@ -52,12 +52,12 @@ models:
   - name: mart_efficiency_trend
     description: >
       One row per training week: the weekly median efficiency next to
-      its 28-day rolling median (D13) and the week's temperature-band
-      context (D14, joined from the temperature_bands seed — the bands
-      are never restated in SQL). The rolling median smooths single-week
-      noise; insufficient weeks (D12) stay present and flagged so the
-      dashboard can de-emphasize rather than hide them. Approved
-      framing: pace-at-heart-rate efficiency observed under similar
+      its 28-day rolling median (D13). The rolling median smooths
+      single-week noise; insufficient weeks (D12) stay present and
+      flagged so the dashboard can de-emphasize rather than hide them.
+      Weekly averages are never banded (v1.7): run-level banding lives
+      in mart_efficiency_by_temp_band. Approved framing:
+      pace-at-heart-rate efficiency observed under similar
       conditions — never proof of fitness change.
     columns:
       - name: week_start_date
@@ -83,14 +83,9 @@ models:
           Average HR across the week's valid runs (from
           mart_weekly_training) — intensity context for the trend.
       - name: avg_temperature_f
-        description: The week's average valid-run temperature (°F).
-      - name: temperature_band_key
         description: >
-          D14 band of avg_temperature_f (cold/mild/warm); NULL when the
-          week has no weather-matched valid runs — missing context
-          stays missing, never a default band.
-      - name: temperature_band_label
-        description: Display label of the band.
+          The week's average valid-run temperature (°F, dry-bulb;
+          context only — never banded at weekly grain, v1.7).
       - name: is_sufficient
         description: D12 sufficiency carried from mart_weekly_training.
         tests: [not_null]

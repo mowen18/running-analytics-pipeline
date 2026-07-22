@@ -293,17 +293,15 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
 
     # Trend mart: the 28-day window ending Sun 2026-06-21 spans all
     # seven valid runs after Sun 2026-05-24 (the treadmill run on 05-20
-    # falls outside); the week's band comes from its avg temperature.
-    (rolling_count, rolling_median, band) = db.execute(
+    # falls outside). Weekly averages are never banded (v1.7).
+    (rolling_count, rolling_median) = db.execute(
         """
-        SELECT rolling_valid_run_count, rolling_median_efficiency,
-               temperature_band_key
+        SELECT rolling_valid_run_count, rolling_median_efficiency
         FROM analytics.mart_efficiency_trend WHERE week_start_date = '2026-06-15'
         """
     ).fetchone()
     assert rolling_count == 7
     assert float(rolling_median) == pytest.approx(200.0 / 145.0, abs=0.0001)
-    assert band == "warm"  # avg(70.0, 70.1) = 70.05 -> rounds into warm
 
     # Band mart: every band present, boundaries exact, nothing dropped.
     bands = {

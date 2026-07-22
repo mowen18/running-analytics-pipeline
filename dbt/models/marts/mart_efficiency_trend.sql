@@ -46,13 +46,6 @@ select
         as rolling_valid_run_count,
     weekly.avg_hr_bpm,
     weekly.avg_temperature_f,
-    bands.band_key   as temperature_band_key,
-    bands.band_label as temperature_band_label,
     weekly.is_sufficient
 from weekly
 left join rolling using (week_start_date)
--- The week's band comes from its average valid-run temperature; NULL
--- when the week has no weather-matched valid runs (missing, never a
--- default band).
-left join {{ ref('temperature_bands') }} bands
-    on {{ temperature_band_range('weekly.avg_temperature_f') }}

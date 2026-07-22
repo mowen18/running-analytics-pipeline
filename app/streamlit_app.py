@@ -150,10 +150,6 @@ EFFICIENCY_TREND_COLUMNS = {
     # so the mix behind each weekly point stays visible.
     "avg_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
     "avg_temperature_f": st.column_config.NumberColumn("Avg °F", format="%.1f"),
-    "temperature_band_key": None,  # the label column already carries it
-    # Week-level context: the band of the WEEK'S average valid-run
-    # temperature — per-run bands live in the eligibility table below.
-    "temperature_band_label": st.column_config.TextColumn("Week temp band"),
     "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
 }
 
@@ -361,6 +357,7 @@ def efficiency_view():
                     ),
                     alt.Tooltip("valid_run_count:Q", title="valid runs (n)"),
                     alt.Tooltip("avg_hr_bpm:Q", title="avg HR (bpm)", format=".0f"),
+                    alt.Tooltip("avg_temperature_f:Q", title="avg temp (°F)", format=".1f"),
                 ],
             )
             .properties(height=320)
