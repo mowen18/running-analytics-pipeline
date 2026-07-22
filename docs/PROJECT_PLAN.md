@@ -1015,3 +1015,24 @@ on both failure arms, joins the aggregate conservation test. Seed
 bounds and names unchanged; every existing `avg_temperature_f` stays
 dry-bulb; new feels-like context columns in the two switched marts
 (`avg_apparent_temperature_f` deliberately mart-only).
+
+# Revision v1.8 — 2026-07-22 — Five temperature bands: split the open top band at NOAA heat-index anchors (Addendum to D14)
+
+Recorded in `docs/decisions/v1.8-five-band-recalibration.md`.
+Summary: the D14 seed becomes five bands — `< 50°F`, `50–70°F`,
+`70–80°F`, `80–90°F`, `> 90°F` — by splitting v1.7's open top band at
+NOAA heat-index anchors (caution 80°F, extreme caution 90°F) that
+coincide with empirical gaps in the observed feels-like distribution
+(74.3–80.4, 88.7–94.6). Banding input (apparent, v1.7) and the 50/70
+boundaries unchanged; `warm` keeps its key with narrowed bounds and
+the "70–80°F" label; new keys `hot` / `very_hot`. Stopping rule: a
+boundary requires BOTH an external anchor AND an empirical gap — no
+further candidates exist. Survivorship caveat: `> 90°F` statistics
+are survival-censored (5 of the 6 runs that land there were excluded
+under the 15-minute floor); n=0/n=1 is the finding. Pre-registered
+redistribution: old warm's 11 valid runs split exactly 3/7/1 (full
+run_quality rows 3/9/6); everything else invariant. Supersedes the
+v1.7 addendum's recorded non-changes for band count, accepted_values,
+and the ordinal ramp (now five blues on the same documented ramp).
+Deliberately NO red proof: the boundary fixtures extend an
+already-green partition test; no defect exists.

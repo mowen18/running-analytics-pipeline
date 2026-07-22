@@ -407,12 +407,15 @@ rule in a documented priority order), carried through `fct_runs` and
 **median** efficiency across valid runs (mean shown as secondary);
 a week is trend-worthy only with ≥ 2 valid runs (`is_sufficient`).
 **Trend (D13)** — a 28-day rolling median over run-level efficiency
-smooths single-week noise. **Temperature bands (D14, revised v1.7)** — < 50 °F,
-50–70 °F, > 70 °F, defined once in the `temperature_bands` seed and
-joined by range against each run's **apparent (feels-like)
-temperature**, which folds humidity and wind into the banding; valid
-runs without a matched feels-like value appear in an explicit
-*weather unavailable* row rather than vanishing from the comparison.
+smooths single-week noise. **Temperature bands (D14, revised v1.7/v1.8)** — < 50 °F,
+50–70 °F, 70–80 °F, 80–90 °F, > 90 °F, defined once in the
+`temperature_bands` seed and joined by range against each run's
+**apparent (feels-like) temperature**, which folds humidity and wind
+into the banding. The 80 and 90 cuts sit on NOAA heat-index anchors
+that coincide with empirical gaps in the observed distribution (the
+v1.8 stopping rule: a boundary requires both). Valid runs without a
+matched feels-like value appear in an explicit *weather unavailable*
+row rather than vanishing from the comparison.
 
 **Pace at heart-rate band (D22, Revision v1.4)** — the sample-grain
 counterpart to efficiency: pool each run's valid, moving stream samples
@@ -532,6 +535,11 @@ it.
   reanalysis — two quality regimes in one dataset. All-NULL rows still
   occur, and still self-heal on later syncs, only when the archive
   genuinely has no data for an hour — now the rare case.
+* The **> 90 °F band is survival-censored** (v1.8): extreme-heat runs
+  are systematically cut short and fail the 15-minute validity floor,
+  so that band only ever contains extreme-heat runs that were
+  completed. Its n=0/n=1 is the finding — never a fair efficiency
+  comparison against the cooler bands.
 * The **dashboard screenshots** in `images/` are still pending capture
   now that the marts are populated. (dbt lineage is rendered directly
   in this README via `make dbt-dag`.)

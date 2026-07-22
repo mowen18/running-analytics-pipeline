@@ -244,9 +244,9 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     outdoor_run(db, 11, day="2026-06-08", hr=210.0)  # outside sanity band
     outdoor_run(db, 12, day="2026-06-14", hr=140.0, distance=1000.0)  # ~80 min/mi
     # ── Week of Mon 2026-06-15: the 70°F edge on the banding axis —
-    # bands read the APPARENT temperature (v1.7). Run 8 is the
-    # deliberate migration witness: dry-bulb 21.11°C -> 70.0°F banded
-    # mild pre-v1.7; apparent 21.17°C -> 70.1°F bands warm now. Run 9
+    # bands read the APPARENT temperature (v1.7). Run 8 is the v1.7
+    # migration witness: dry-bulb 21.11°C -> 70.0°F banded mild
+    # pre-v1.7; apparent 21.17°C -> 70.1°F bands warm (70–80°F). Run 9
     # diverges in value (73.0°F feels-like) but not in band.
     outdoor_run(
         db, 8, day="2026-06-16", hr=145.0, cell="12.00_12.00", temp_c=21.11, apparent_c=21.17
@@ -275,6 +275,21 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     # guard it also matched a seed band: the double-count the run-grain
     # totality test catches and the aggregate conservation test cannot.
     outdoor_run(db, 14, day="2026-05-21", hr=145.0, cell="14.00_14.00", trainer=True)
+    # ── Week of Mon 2026-06-22: the v1.8 boundary witnesses, pinning
+    # the 1-dp bound encoding at the two new cuts plus the unbounded
+    # top. Run 15's staged 80.0 comes from 80.006 rounding DOWN — a
+    # bound-encoding witness like run 8's 70.106 -> 70.1: exactly 80.0
+    # is the INCLUSIVE top of 70–80°F (mirroring 70.0-stays-mild), and
+    # 90.0 is the inclusive top of 80–90°F.
+    outdoor_run(
+        db, 15, day="2026-06-23", hr=145.0, cell="16.00_16.00", temp_c=26.0, apparent_c=26.67
+    )
+    outdoor_run(
+        db, 16, day="2026-06-24", hr=145.0, cell="17.00_17.00", temp_c=30.0, apparent_c=32.22
+    )
+    outdoor_run(
+        db, 17, day="2026-06-25", hr=145.0, cell="18.00_18.00", temp_c=33.0, apparent_c=35.0
+    )
     db.commit()
 
     result = run_dbt("build")
@@ -302,6 +317,9 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         12: "pace outside 4.0–20.0 min/mi bounds",
         13: None,  # matched weather without feels-like: still valid
         14: None,  # trainer with matched weather: still valid
+        15: None,  # 80.0°F boundary witness (v1.8)
+        16: None,  # 90.0°F boundary witness (v1.8)
+        17: None,  # 95.0°F top-band witness (v1.8)
     }
 
     # Efficiency traces to documented fields: 200 m/min at 140 bpm.
@@ -324,6 +342,7 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
         ("2026-06-01", 2, True),
         ("2026-06-08", 3, True),  # race + hard effort now count (v1.1)
         ("2026-06-15", 3, True),  # the gap witness joins the week (v1.7)
+        ("2026-06-22", 3, True),  # the v1.8 boundary witnesses' week
     ]
     # Week 1 median interpolates between 200/150 and 200/140.
     assert float(weeks[1][3]) == pytest.approx((200.0 / 150.0 + 200.0 / 140.0) / 2, abs=0.0001)
@@ -355,14 +374,18 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
     # default. Run 8 left this band with v1.7: its 70.1°F feels-like
     # bands warm even though its 70.0°F dry-bulb banded mild before.
     assert bands["mild"][0] == 3
-    assert bands["warm"][0] == 2  # the migration witness + 73.0°F
+    # 70–80°F (v1.8 narrowed): the v1.7 migration witness (70.1°F),
+    # 73.0°F, and the 80.0°F inclusive-top-edge witness.
+    assert bands["warm"][0] == 3
+    assert bands["hot"][0] == 1  # 90.0°F — inclusive top of 80–90°F
+    assert bands["very_hot"][0] == 1  # 95.0°F — the unbounded top band
     # "Not applicable" and "missing" stay distinct — and indoor wins
     # alone for the trainer run with matched weather (v1.7 guard).
     assert bands["indoor"][0] == 2
     # Unmatched outdoor + matched-without-feels-like (v1.7): both are
     # explicit rows, never silent drops.
     assert bands["no_weather"][0] == 2
-    assert sum(count for count, _ in bands.values()) == 10  # conservation
+    assert sum(count for count, _ in bands.values()) == 13  # conservation
 
     # Run-level quality mart: every run visible with its verdict, band,
     # and an efficiency value even when invalid.
@@ -374,12 +397,15 @@ def test_efficiency_marts_compute_metrics_exclusions_and_bands(db):
             "FROM analytics.mart_run_quality"
         ).fetchall()
     }
-    assert len(quality) == 14  # every run, valid or not
+    assert len(quality) == 17  # every run, valid or not
     assert quality[4][0] is None  # the race counts now (v1.1)
     assert quality[11][0] == "average HR outside 90–200 bpm sanity band"
     assert quality[11][2] is not None  # invalid runs keep their value
     assert quality[1][1] == "< 50°F"  # banded per-run by its own feels-like
-    assert quality[8][1] == "> 70°F"  # the migration witness, on apparent
+    assert quality[8][1] == "70–80°F"  # the v1.7 migration witness (70.1°F)
+    assert quality[15][1] == "70–80°F"  # 80.0°F: inclusive top edge (v1.8)
+    assert quality[16][1] == "80–90°F"  # 90.0°F: inclusive top edge (v1.8)
+    assert quality[17][1] == "> 90°F"  # 95.0°F: the unbounded top (v1.8)
     assert quality[3][1] == "weather unavailable"  # outdoor, unmatched
     assert quality[13][1] == "weather unavailable"  # matched, no feels-like
     assert quality[10][1] == "indoor"  # trainer: not applicable, not missing
