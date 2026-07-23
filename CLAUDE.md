@@ -89,7 +89,7 @@
   renders as the "Air °F"/"Feels-like °F" pair. Zero band movers on
   the 2026-07-22 warehouse (pre-registered and verified). Addendum:
   docs/decisions/v1.7-apparent-temperature-banding.md.
-- Current phase: v1.8 merged to main (2026-07-22). The D14 seed is
+- Revision v1.8 merged to main (2026-07-22). The D14 seed is
   five bands — <50 / 50–70 / 70–80 / 80–90 / >90 °F — splitting
   v1.7's open top band at NOAA heat-index anchors (80/90°F) that
   coincide with empirical gaps in the observed feels-like
@@ -109,6 +109,22 @@
   declaration — the boundary fixtures (80.0/90.0/95.0) extend an
   already-green partition test. Addendum:
   docs/decisions/v1.8-five-band-recalibration.md.
+- Current phase: v1.9 merged to main (2026-07-23), docs-only.
+  PROJECT_PLAN.md §3's single "Explicitly Out of Scope" list split
+  into "Non-Goals (this project's thesis)" (Strava-screen
+  replication, ML performance/race-time prediction, mobile
+  development — revised only by revisiting the project's purpose,
+  never a routine addendum) and "Deferred (out of scope for Release
+  1.0)" (real-time/event-driven ingestion, cloud-hosted components —
+  enter scope only via the standard decision-addendum process). The
+  Decision Log preamble now states out-of-scope items are
+  release-scoped unless listed as non-goals. Governance
+  clarification, not a loosening: no locked decision changed, no
+  scope entered or left; the old list's five items map 1:1 onto the
+  two new lists (two rephrased, mapping in the addendum). The
+  webhook/FastAPI extension surfaced the ambiguity but is NOT
+  admitted by v1.9 — it still needs its own addendum. Addendum:
+  docs/decisions/v1.9-scope-taxonomy.md.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and
