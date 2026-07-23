@@ -33,7 +33,7 @@ The repository is **pipeline-first, not dashboard-first**. The primary deliverab
 
 ## 2. Decision Log
 
-All previously open recommendations are now locked. Any change to these decisions requires a documented revision to this plan.
+All previously open recommendations are now locked. Any change to these decisions requires a documented revision to this plan. Out-of-scope items are release-scoped unless listed as non-goals (§3): non-goals are statements of the project's purpose, revised only by revisiting that purpose, while entering a deferred item requires an addendum, never a plan rewrite.
 
 | # | Decision | Final Value |
 |---|----------|-------------|
@@ -78,13 +78,26 @@ All previously open recommendations are now locked. Any change to these decision
 * Thin Streamlit presentation layer (≤ 3 views)
 * Automated pytest and dbt tests; reproducible local setup
 
-### Explicitly Out of Scope
+### Non-Goals (this project's thesis)
 
-* Machine-learning models, performance predictions, race-time predictions
-* Real-time processing
-* Mobile application development
+These are things this project is not: revising this list means
+revisiting the project's purpose, not filing a routine addendum.
+
 * Replication of standard Strava screens
-* Complex cloud deployment
+* Machine-learning performance or race-time prediction (conflicts
+  with the project's observational-never-causal stance)
+* Mobile application development
+
+### Deferred (out of scope for Release 1.0)
+
+Excluded to bound the initial build, not rejected. Any deferred item
+may enter scope through the standard decision-addendum process, at
+which point it moves from this list into that addendum's scope
+statement; precedent is cardiac drift (Release 1.1) and Airflow
+(v1.5), which entered exactly this way.
+
+* Real-time / event-driven ingestion (e.g., Strava webhooks)
+* Cloud-hosted components (e.g., an always-on webhook receiver)
 
 ---
 
@@ -1036,3 +1049,20 @@ v1.7 addendum's recorded non-changes for band count, accepted_values,
 and the ordinal ramp (now five blues on the same documented ramp).
 Deliberately NO red proof: the boundary fixtures extend an
 already-green partition test; no defect exists.
+
+# Revision v1.9 — 2026-07-23 — Non-goals vs. deferred: split the out-of-scope list (docs-only Addendum)
+
+Recorded in `docs/decisions/v1.9-scope-taxonomy.md`.
+Summary: section 3's single "Explicitly Out of Scope" list conflated
+thesis-level non-goals with MVP deferrals and read as prohibiting
+both forever; the webhook/FastAPI extension surfaced the ambiguity.
+The list splits into "Non-Goals (this project's thesis)" —
+replication of standard Strava screens, machine-learning performance
+or race-time prediction, mobile application development — and
+"Deferred (out of scope for Release 1.0)" — real-time / event-driven
+ingestion, cloud-hosted components — and the Decision Log preamble
+now states that out-of-scope items are release-scoped unless listed
+as non-goals. Governance clarification, not a loosening: no locked
+decision changes, no scope enters or leaves; items are re-categorized
+only (two rephrased, old→new mapping recorded in the addendum), and
+entering a deferred item still requires its own decision addendum.
