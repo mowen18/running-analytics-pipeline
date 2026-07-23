@@ -267,9 +267,14 @@ def band_chart(band_trend, run_segments, selected_bands) -> alt.LayerChart:
     # pace in that band, on the run's own date. Weekly medians stay
     # in the table below — on the chart they duplicated these
     # points at current data volume.
+    # Hollow, not semi-transparent-filled: the band scale encodes band
+    # by lightness, and opacity also reads as lightness, so a filled
+    # half-opacity dark-band run point mimics a light-band vertex. The
+    # run/vertex distinction lives in shape (ring vs haloed disc), off
+    # the color channel entirely.
     run_points = (
         alt.Chart(run_selected)
-        .mark_circle(size=40, opacity=0.5)
+        .mark_point(filled=False, size=30, strokeWidth=1.2, opacity=0.6)
         .encode(
             x=alt.X("start_date_local:T", title="training week", axis=axis, scale=TIME_X_SCALE),
             y=alt.Y(
@@ -311,7 +316,7 @@ def band_chart(band_trend, run_segments, selected_bands) -> alt.LayerChart:
     )
     band_vertices = (
         alt.Chart(line_frame.dropna(subset=["rolling_median_pace_min_per_mi"]))
-        .mark_circle(size=36)
+        .mark_circle(size=55, stroke="white", strokeWidth=1)
         .encode(
             x=alt.X("week_start_date:T", title="training week", axis=axis, scale=TIME_X_SCALE),
             y=alt.Y(
@@ -480,9 +485,9 @@ def efficiency_view():
             use_container_width=True,
         )
         st.caption(
-            "One faint point per run per HR band — that run's median pace "
+            "One hollow point per run per HR band — that run's median pace "
             "in the band. One line per band: the 28-day rolling median "
-            "across those run medians, with a vertex wherever the 28-day "
+            "across those run medians, with a filled vertex wherever the 28-day "
             f"window holds at least {ROLLING_LINE_MIN_WINDOW_RUNS} runs; "
             "a gap means the window was too thin. Weekly sufficiency is a "
             "table flag, not a line rule (v1.6.1)."
