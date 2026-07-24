@@ -118,6 +118,13 @@ def test_decimals_are_coerced_to_float_for_the_browser():
     assert df["week"].tolist() == [1, 2]  # non-Decimal columns untouched
 
 
+def test_tooltip_1dp_formats_values_and_marks_missing():
+    app = load_app_module()
+    values = pd.Series([None, 84.24], dtype="float64")
+
+    assert app.format_tooltip_1dp(values).tolist() == ["—", "84.2"]
+
+
 def render(view: str):
     """Run the app headlessly on the scratch DB, switched to `view`."""
     from streamlit.testing.v1 import AppTest
