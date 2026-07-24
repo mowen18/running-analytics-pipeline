@@ -101,6 +101,11 @@ def to_dataframe(rows, columns) -> pd.DataFrame:
     return df
 
 
+def format_tooltip_1dp(series: pd.Series) -> pd.Series:
+    """Format nullable numeric values for one-decimal chart tooltips."""
+    return series.map(lambda value: "—" if pd.isna(value) else f"{value:.1f}")
+
+
 @st.cache_data(ttl=300)
 def load(table: str) -> pd.DataFrame:
     if table not in ANALYTICS_TABLES:
@@ -344,6 +349,9 @@ def efficiency_view():
     # astype(bool): psycopg hands back object dtype on empty frames, and
     # a non-bool mask would select columns instead of rows.
     sufficient = trend[trend["is_sufficient"].astype(bool)].copy()
+    sufficient["avg_temperature_f_display"] = format_tooltip_1dp(
+        sufficient["avg_temperature_f"]
+    )
 
     if sufficient["median_efficiency_m_per_beat"].dropna().empty:
         st.info(
@@ -368,7 +376,9 @@ def efficiency_view():
                     ),
                     alt.Tooltip("valid_run_count:Q", title="valid runs (n)"),
                     alt.Tooltip("avg_hr_bpm:Q", title="avg HR (bpm)", format=".0f"),
-                    alt.Tooltip("avg_temperature_f:Q", title="avg air temp (°F)", format=".1f"),
+                    alt.Tooltip(
+                        "avg_temperature_f_display:N", title="avg air temp (°F)"
+                    ),
                 ],
             )
             .properties(height=320)
@@ -386,7 +396,7 @@ def efficiency_view():
                 ],
             )
         )
-        st.altair_chart(themed(alt.layer(weekly, rolling)), use_container_width=True)
+        st.altair_chart(themed(alt.layer(weekly, rolling)), width="stretch")
         st.caption(
             "Blue line: 28-day rolling median (the primary trend). Gray points: "
             "single-week medians. Weeks below the 2-valid-run sufficiency "
@@ -436,7 +446,7 @@ def efficiency_view():
             .encode(y=band_y, x=alt.X("label_x:Q"), text="n_label:N")
         )
         st.altair_chart(
-            themed(alt.layer(bars, labels).properties(height=266)), use_container_width=True
+            themed(alt.layer(bars, labels).properties(height=266)), width="stretch"
         )
         st.caption(
             "Median of per-run efficiency across runs with valid HR data in "
@@ -482,7 +492,7 @@ def efficiency_view():
         selected_bands = st.multiselect("HR bands", options=band_order, default=default_bands)
         st.altair_chart(
             themed(band_chart(band_trend, run_segments, selected_bands)),
-            use_container_width=True,
+            width="stretch",
         )
         st.caption(
             "One hollow point per run per HR band — that run's median pace "
@@ -494,7 +504,7 @@ def efficiency_view():
         )
     st.dataframe(
         band_trend.sort_values(["week_start_date", "band_sort_order"]),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config=BAND_TREND_COLUMNS,
     )
@@ -503,7 +513,7 @@ def efficiency_view():
     st.subheader("Every run, with its verdict")
     quality = load("mart_run_quality").sort_values("start_date_local", ascending=False)
     st.dataframe(
-        quality, use_container_width=True, hide_index=True, column_config=RUN_QUALITY_COLUMNS
+        quality, width="stretch", hide_index=True, column_config=RUN_QUALITY_COLUMNS
     )
     st.caption(
         "Efficiency is computed for every heart-rate-carrying run; the trend "
@@ -514,7 +524,7 @@ def efficiency_view():
     )
 
     st.dataframe(
-        trend, use_container_width=True, hide_index=True, column_config=EFFICIENCY_TREND_COLUMNS
+        trend, width="stretch", hide_index=True, column_config=EFFICIENCY_TREND_COLUMNS
     )
     st.caption("All weeks, including insufficient ones — nothing is dropped, only flagged.")
 
@@ -576,9 +586,9 @@ def weekly_view():
         )
         .properties(height=300)
     )
-    st.altair_chart(themed(mileage), use_container_width=True)
+    st.altair_chart(themed(mileage), width="stretch")
 
-    st.dataframe(weekly, use_container_width=True, hide_index=True, column_config=WEEKLY_COLUMNS)
+    st.dataframe(weekly, width="stretch", hide_index=True, column_config=WEEKLY_COLUMNS)
     st.caption(
         "Volume counts every run; efficiency columns aggregate runs with valid "
         "HR data only and stay empty (never zero) for weeks without them."
@@ -620,6 +630,8 @@ def drift_view():
         )
         return
 
+    runs = runs.copy()
+    runs["temperature_f_display"] = format_tooltip_1dp(runs["temperature_f"])
     points = (
         alt.Chart(runs)
         .mark_circle(size=80, color=BLUE)
@@ -631,12 +643,12 @@ def drift_view():
                 alt.Tooltip("decoupling_pct:Q", title="decoupling %", format=".2f"),
                 alt.Tooltip("analysis_window_min:Q", title="window (min)", format=".1f"),
                 alt.Tooltip("valid_sample_count:Q", title="valid samples (n)"),
-                alt.Tooltip("temperature_f:Q", title="air °F", format=".1f"),
+                alt.Tooltip("temperature_f_display:N", title="air °F"),
             ],
         )
         .properties(height=320)
     )
-    st.altair_chart(themed(alt.layer(zero_rule(), points)), use_container_width=True)
+    st.altair_chart(themed(alt.layer(zero_rule(), points)), width="stretch")
 
     trend = load("mart_drift_trend")
     sufficient = trend[trend["is_sufficient"].astype(bool)]
@@ -667,7 +679,7 @@ def drift_view():
             )
             .properties(height=280)
         )
-        st.altair_chart(themed(alt.layer(zero_rule(), rolling)), use_container_width=True)
+        st.altair_chart(themed(alt.layer(zero_rule(), rolling)), width="stretch")
         if len(sufficient) < 2:
             st.caption(
                 "One sufficient week so far — the rolling median draws a line "
@@ -675,7 +687,7 @@ def drift_view():
             )
 
     st.dataframe(
-        trend, use_container_width=True, hide_index=True, column_config=DRIFT_TREND_COLUMNS
+        trend, width="stretch", hide_index=True, column_config=DRIFT_TREND_COLUMNS
     )
     st.caption("All drift weeks with sample counts; insufficient weeks are flagged, not deleted.")
 
