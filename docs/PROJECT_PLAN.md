@@ -1066,3 +1066,17 @@ as non-goals. Governance clarification, not a loosening: no locked
 decision changes, no scope enters or leaves; items are re-categorized
 only (two rephrased, old→new mapping recorded in the addendum), and
 entering a deferred item still requires its own decision addendum.
+
+# Revision v1.8.1 — 2026-07-24 — Null-safe temperature tooltips (Addendum)
+
+Recorded in
+`docs/decisions/v1.8.1-tooltip-null-display.md`.
+Summary: resolves the rendering edge deferred by v1.8. The weekly
+efficiency and drift temperature tooltips use one shared app-side
+formatter that renders numeric values to one decimal place and
+missing values as `—`; both tooltips consume nominal display fields
+instead of raw nullable numerics. Tooltip titles, tables, marts,
+schemas, thresholds, D19's allow-list, and the three-view cap are
+unchanged. A red helper test precedes the fix, followed by `make test`,
+`make lint`, real-data tooltip screenshots, and one synthetic-NULL
+screenshot.
