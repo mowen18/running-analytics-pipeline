@@ -101,6 +101,11 @@ def to_dataframe(rows, columns) -> pd.DataFrame:
     return df
 
 
+def format_tooltip_1dp(series: pd.Series) -> pd.Series:
+    """Format nullable numeric values for one-decimal chart tooltips."""
+    return series.map(lambda value: "—" if pd.isna(value) else f"{value:.1f}")
+
+
 @st.cache_data(ttl=300)
 def load(table: str) -> pd.DataFrame:
     if table not in ANALYTICS_TABLES:
@@ -344,6 +349,9 @@ def efficiency_view():
     # astype(bool): psycopg hands back object dtype on empty frames, and
     # a non-bool mask would select columns instead of rows.
     sufficient = trend[trend["is_sufficient"].astype(bool)].copy()
+    sufficient["avg_temperature_f_display"] = format_tooltip_1dp(
+        sufficient["avg_temperature_f"]
+    )
 
     if sufficient["median_efficiency_m_per_beat"].dropna().empty:
         st.info(
@@ -368,7 +376,9 @@ def efficiency_view():
                     ),
                     alt.Tooltip("valid_run_count:Q", title="valid runs (n)"),
                     alt.Tooltip("avg_hr_bpm:Q", title="avg HR (bpm)", format=".0f"),
-                    alt.Tooltip("avg_temperature_f:Q", title="avg air temp (°F)", format=".1f"),
+                    alt.Tooltip(
+                        "avg_temperature_f_display:N", title="avg air temp (°F)"
+                    ),
                 ],
             )
             .properties(height=320)
@@ -620,6 +630,8 @@ def drift_view():
         )
         return
 
+    runs = runs.copy()
+    runs["temperature_f_display"] = format_tooltip_1dp(runs["temperature_f"])
     points = (
         alt.Chart(runs)
         .mark_circle(size=80, color=BLUE)
@@ -631,7 +643,7 @@ def drift_view():
                 alt.Tooltip("decoupling_pct:Q", title="decoupling %", format=".2f"),
                 alt.Tooltip("analysis_window_min:Q", title="window (min)", format=".1f"),
                 alt.Tooltip("valid_sample_count:Q", title="valid samples (n)"),
-                alt.Tooltip("temperature_f:Q", title="air °F", format=".1f"),
+                alt.Tooltip("temperature_f_display:N", title="air °F"),
             ],
         )
         .properties(height=320)
