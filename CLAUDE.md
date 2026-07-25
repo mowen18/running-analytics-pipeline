@@ -198,7 +198,6 @@
   after the first refresh — that is by design, not a bug.
 
 ## Style for notes/
-
 Write all content in notes/ in plain, simple language (ASD-STE100
 style).
 
@@ -211,17 +210,52 @@ style).
 Example: write "Check where the filter lives before you edit,"
 not "Execute a verification fork prior to modification."
 
-## Verifying chart changes
+## Verifying major chart and UI changes
+Visual verification is required only for changes that materially affect a rendered chart or its surrounding UI.
 
-Any change that affects a rendered chart is verified by looking at the
-rendered result, never by spec or schema validation alone.
+This includes:
 
-Procedure:
-1. Ensure Postgres is up and start the app (make app, port 8501).
-2. Use the Playwright MCP tools to open the view, wait for the chart
-   canvas to render, and take a screenshot.
-3. Open the screenshot and check it against the change's intent before
-   committing. State in the report what the image shows.
+* Adding, removing, or replacing a chart
+* Changing chart type, layout, scale, axis behavior, aggregation, filtering, or displayed fields
+* Changing labels, legends, tooltips, annotations, colors, sizing, or responsive behavior in a way that could affect readability or interpretation
+* Changing Streamlit layout, containers, tabs, controls, or state behavior that could affect how a chart is displayed or used
+* Fixing a visual bug whose resolution cannot be confirmed reliably through tests or schema validation alone
 
-If the app cannot run (no database), fall back to chart.save PNG via
-vl-convert and say so in the report.
+Visual verification is not required for:
+
+* Refactoring with no intended visual change
+* Test-only, documentation-only, or configuration-only changes
+* Data-model changes that do not alter the chart’s output
+* Minor copy edits
+* Dependency or formatting changes that do not affect rendering
+* Changes already covered by a focused visual regression test
+
+When visual verification is required:
+
+1. Ensure Postgres is running and start the app with `make app` on port 8501.
+2. Use the Playwright MCP tools to open the affected view, wait for the chart or UI element to render, and take a screenshot.
+3. Open the screenshot and verify the affected behavior against the change’s intent before committing.
+4. State in the report what was visually checked and what the screenshot showed.
+
+Limit verification to the affected view or component. Do not inspect unrelated charts or pages unless the change could reasonably affect them.
+
+If the app cannot run because the database or another required service is unavailable, fall back to rendering the affected chart with `chart.save` and `vl-convert`, then state that limitation in the report.
+
+## Testing and validating changes
+After the change:
+1. Run the smallest directly relevant test first.
+2. Run the full suite only if the targeted test passes and the change could
+   affect unrelated modules.
+3. Do not retry a failing command more than once without explaining the failure.
+
+## Ambiguous requests
+When a request has material ambiguity:
+
+1. Do not edit files or run expensive commands.
+2. Restate the intended outcome.
+3. Identify assumptions that could alter the implementation.
+4. Ask concise clarifying questions.
+5. Propose a bounded plan and wait for approval.
+
+Prefer the smallest relevant file search and targeted test. Do not perform
+adjacent refactoring unless explicitly requested.
