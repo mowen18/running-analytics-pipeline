@@ -237,6 +237,13 @@ When visual verification is required:
 3. Open the screenshot and verify the affected behavior against the change’s intent before committing.
 4. State in the report what was visually checked and what the screenshot showed.
 
+Screenshot paths come from the take_screenshot tool result — read the
+saved path there before opening the file (`./name.png` means the repo
+root). Do not pass a filename: named screenshots bypass the configured
+output dir and land in the repo root; without one, screenshots go to
+tmp/playwright (set in .mcp.json). If an artifact appears missing,
+search for it inside the repo only — never `~` or `/`.
+
 Limit verification to the affected view or component. Do not inspect unrelated charts or pages unless the change could reasonably affect them.
 
 If the app cannot run because the database or another required service is unavailable, fall back to rendering the affected chart with `chart.save` and `vl-convert`, then state that limitation in the report.
