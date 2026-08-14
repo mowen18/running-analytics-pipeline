@@ -74,7 +74,7 @@ ANALYTICS_TABLES = (
 
 OBSERVATIONAL_NOTE = (
     "Observational signal, not proof: efficiency and drift move with weather, "
-    "terrain, sleep, and measurement noise — trends here are never causal claims."
+    "terrain, sleep, and measurement noise."
 )
 
 
