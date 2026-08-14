@@ -248,6 +248,12 @@ After the change:
    affect unrelated modules.
 3. Do not retry a failing command more than once without explaining the failure.
 
+Scoped test tier: diffs confined to app/ and tests/test_app.py may use
+`make test-app` (unit + app tests, no integration) before commit. Any
+diff touching src/, dbt/, test fixtures, Makefile, or config still
+requires the full suite (`make test`). The full suite always runs
+before merges and at session end. Scoped runs must report skip counts.
+
 ## Ambiguous requests
 When a request has material ambiguity:
 

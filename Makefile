@@ -25,7 +25,7 @@ AIRFLOW_ENV := PATH=$(AIRFLOW_VENV)/bin:$$PATH \
 .PHONY: help up down bootstrap athlete authorize sync-activities reconcile \
 	backfill-coordinates sync-weather reconcile-weather sync-streams \
 	dbt-profile dbt-build dbt-test dbt-freshness dbt-docs dbt-dag app all \
-	test lint format airflow-install airflow-start
+	test test-app lint format airflow-install airflow-start
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | sed 's/:.*//' | sort
@@ -108,6 +108,10 @@ all: sync-activities backfill-coordinates sync-weather sync-streams dbt-build  #
 
 test:
 	$(VENV)/pytest
+
+test-app:  ## unit + app tests — valid only for diffs confined to app/
+	$(VENV)/pytest -m "not integration" -q
+	$(VENV)/pytest tests/test_app.py -q
 
 lint:
 	$(VENV)/ruff check src tests
