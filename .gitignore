@@ -49,6 +49,10 @@ Thumbs.db
 # dbt's machine-local anonymous-id cookie
 dbt/.user.yml
 
+# ── Playwright MCP artifacts & local scratch — never repo content ─────
+.playwright-mcp/
+tmp/
+
 # ── Airflow (v1.5) — venv + AIRFLOW_HOME live outside the repo; guards ─
 airflow.db
 airflow.cfg
