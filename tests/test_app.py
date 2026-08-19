@@ -22,19 +22,22 @@ from test_dbt_models import (
     db,  # noqa: F401 — shared truncating fixture
     drift_run,
     insert_stream,
+    outdoor_ride,
     run_dbt,
     steady_stream,
 )
 
 APP_PATH = Path(__file__).resolve().parent.parent / "app" / "streamlit_app.py"
 TEST_DB = "running_analytics_test"
-VIEW_NAMES = ["Aerobic efficiency", "Weekly training", "Cardiac drift"]
+VIEW_NAMES = ["Aerobic efficiency", "Weekly training", "Cardiac drift", "Cycling training"]
 
 # The approved marts — D19 allows nothing else. Deliberately NOT the
 # whole mart layer: mart_band_weekly stays out because the weekly band
 # statistics travel inside mart_band_trend (v1.4), while
-# mart_run_band_segments is the band chart's run-level scatter (v1.6 —
-# each revision grows the list by exactly one name, proven red first).
+# mart_run_band_segments is the band chart's run-level scatter (v1.6).
+# Every addition is proven red first — one name per revision through
+# v1.6, then exactly the two cycling marts in v2.0 Phase C1 (amended
+# D19 names all three; mart_segment_trend arrives with Phase C2).
 MART_TABLES = frozenset(
     {
         "mart_weekly_training",
@@ -45,6 +48,8 @@ MART_TABLES = frozenset(
         "mart_drift_trend",
         "mart_band_trend",
         "mart_run_band_segments",
+        "mart_weekly_cycling",
+        "mart_ride_quality",
     }
 )
 
@@ -78,10 +83,11 @@ def test_core_relations_are_refused_even_in_the_analytics_schema():
 
 
 def test_unlisted_marts_are_refused():
-    """Each revision grows the allow-list by exactly one name (v1.4:
-    mart_band_trend; v1.6: mart_run_band_segments); mart_band_weekly is
-    a real mart but the weekly statistics travel inside the trend mart,
-    so the app must refuse it like anything else off the list."""
+    """Allow-list growth is red-first and named per revision (v1.4:
+    mart_band_trend; v1.6: mart_run_band_segments; v2.0 C1: the two
+    cycling marts); mart_band_weekly is a real mart but the weekly
+    statistics travel inside the trend mart, so the app must refuse it
+    like anything else off the list."""
     app = load_app_module()
     with pytest.raises(ValueError, match="not an approved analytics relation"):
         app.load("mart_band_weekly")
@@ -157,6 +163,7 @@ def test_every_view_renders_with_populated_marts(db):  # noqa: F811
     insert_stream(db, 1, samples=steady_stream())
     drift_run(db, 2, day="2026-06-17")
     insert_stream(db, 2, samples=steady_stream(second_half_hr=145.0))
+    outdoor_ride(db, 50, day="2026-06-16", hr=140, cadence=88.0)
     db.commit()
     result = run_dbt("build")
     assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
@@ -167,12 +174,15 @@ def test_every_view_renders_with_populated_marts(db):  # noqa: F811
 
     weekly = render("Weekly training")
     assert weekly.metric[0].value == "13.4"  # 2 × 10.8 km in miles
+    cycling = render("Cycling training")
+    assert cycling.metric[0].value == "19.9"  # the 32 km fixture ride in miles
     drift = render("Cardiac drift")
     # Sign convention must be stated on the view itself (D17).
     assert any("positive = " in c.value for c in drift.caption)
     # The eligibility and band-trend tables render alongside the weekly
-    # trend table (v1.4: the band section lives INSIDE this view —
-    # D19's three-view cap is not amended).
+    # trend table (v1.4: the band section lives INSIDE this view — the
+    # D22 nesting choice, made under the original three-view cap;
+    # v2.0's amended cap is five, with cycling as its own view).
     efficiency = render("Aerobic efficiency")
     assert len(efficiency.dataframe) >= 3
     # The D22 sign convention must be stated on the view itself too.

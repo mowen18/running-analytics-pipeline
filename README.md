@@ -97,11 +97,11 @@ make bootstrap        # (re-)apply every sql/*.sql — idempotent
 make athlete          # print the authenticated athlete profile
 make sync-activities  # incremental Strava activity sync (14-day overlap)
 make reconcile        # full reconciliation from SYNC_START_DATE
-make backfill-coordinates # resolve run-start coordinates (payload, else polyline)
-make sync-weather     # fetch hourly weather for outdoor runs not yet covered
+make backfill-coordinates # resolve activity-start coordinates (payload, else polyline)
+make sync-weather     # fetch hourly weather for outdoor runs and rides not yet covered
 make reconcile-weather # re-fetch weather even for already-cached hours
 make sync-streams     # backfill activity streams for fetch-eligible runs
-make app              # launch the Streamlit dashboard (three views)
+make app              # launch the Streamlit dashboard (four views)
 make all              # full refresh: every sync, then dbt build
 make dbt-build        # build all dbt models and run their tests
 make dbt-test         # dbt tests only
@@ -229,6 +229,8 @@ flowchart LR
 
     subgraph intermediate["Intermediate"]
         model_running_analytics_int_band_window_samples["int_band_window_samples"]
+        model_running_analytics_int_ride_measures["int_ride_measures"]
+        model_running_analytics_int_rides_with_weather["int_rides_with_weather"]
         model_running_analytics_int_run_band_assessment["int_run_band_assessment"]
         model_running_analytics_int_run_efficiency["int_run_efficiency"]
         model_running_analytics_int_run_stream_samples["int_run_stream_samples"]
@@ -239,6 +241,7 @@ flowchart LR
     subgraph core["Core"]
         model_running_analytics_fct_band_candidates["fct_band_candidates"]
         model_running_analytics_fct_drift_candidates["fct_drift_candidates"]
+        model_running_analytics_fct_rides["fct_rides"]
         model_running_analytics_fct_run_band_segments["fct_run_band_segments"]
         model_running_analytics_fct_runs["fct_runs"]
     end
@@ -249,15 +252,19 @@ flowchart LR
         model_running_analytics_mart_drift_trend["mart_drift_trend"]
         model_running_analytics_mart_efficiency_by_temp_band["mart_efficiency_by_temp_band"]
         model_running_analytics_mart_efficiency_trend["mart_efficiency_trend"]
+        model_running_analytics_mart_ride_quality["mart_ride_quality"]
         model_running_analytics_mart_run_band_segments["mart_run_band_segments"]
         model_running_analytics_mart_run_drift["mart_run_drift"]
         model_running_analytics_mart_run_quality["mart_run_quality"]
+        model_running_analytics_mart_weekly_cycling["mart_weekly_cycling"]
         model_running_analytics_mart_weekly_training["mart_weekly_training"]
     end
 
     model_running_analytics_fct_band_candidates --> model_running_analytics_mart_run_quality
     model_running_analytics_fct_drift_candidates --> model_running_analytics_mart_run_drift
     model_running_analytics_fct_drift_candidates --> model_running_analytics_mart_run_quality
+    model_running_analytics_fct_rides --> model_running_analytics_mart_ride_quality
+    model_running_analytics_fct_rides --> model_running_analytics_mart_weekly_cycling
     model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_band_trend
     model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_band_weekly
     model_running_analytics_fct_run_band_segments --> model_running_analytics_mart_run_band_segments
@@ -269,6 +276,8 @@ flowchart LR
     model_running_analytics_fct_runs --> model_running_analytics_mart_weekly_training
     model_running_analytics_int_band_window_samples --> model_running_analytics_fct_run_band_segments
     model_running_analytics_int_band_window_samples --> model_running_analytics_int_run_band_assessment
+    model_running_analytics_int_ride_measures --> model_running_analytics_fct_rides
+    model_running_analytics_int_rides_with_weather --> model_running_analytics_int_ride_measures
     model_running_analytics_int_run_band_assessment --> model_running_analytics_fct_band_candidates
     model_running_analytics_int_run_band_assessment --> model_running_analytics_fct_run_band_segments
     model_running_analytics_int_run_efficiency --> model_running_analytics_fct_drift_candidates
@@ -283,12 +292,15 @@ flowchart LR
     model_running_analytics_mart_band_weekly --> model_running_analytics_mart_band_trend
     model_running_analytics_mart_run_drift --> model_running_analytics_mart_drift_trend
     model_running_analytics_mart_weekly_training --> model_running_analytics_mart_efficiency_trend
+    model_running_analytics_stg_strava__activities --> model_running_analytics_int_rides_with_weather
     model_running_analytics_stg_strava__activities --> model_running_analytics_int_runs_with_weather
+    model_running_analytics_stg_weather__hourly --> model_running_analytics_int_rides_with_weather
     model_running_analytics_stg_weather__hourly --> model_running_analytics_int_runs_with_weather
     seed_running_analytics_hr_bands --> model_running_analytics_int_band_window_samples
     seed_running_analytics_hr_bands --> model_running_analytics_mart_band_weekly
     seed_running_analytics_hr_bands --> model_running_analytics_mart_run_band_segments
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_efficiency_by_temp_band
+    seed_running_analytics_temperature_bands --> model_running_analytics_mart_ride_quality
     seed_running_analytics_temperature_bands --> model_running_analytics_mart_run_quality
     source_running_analytics_raw_strava_activities --> model_running_analytics_stg_strava__activities
     source_running_analytics_raw_strava_activity_coordinates --> model_running_analytics_stg_strava__activities
@@ -480,13 +492,17 @@ deleted.
 
 ## Dashboard
 
-`make app` serves exactly three Streamlit views (decision D19):
-**Aerobic Efficiency** (weekly + 28-day rolling trend, temperature-band
-comparison, and the D22 pace-at-HR-band section — the same analytical
-question with intensity controlled by construction, so it lives inside
-this view rather than amending the three-view cap), **Weekly Training**
-(mileage, moving time, run counts), and **Cardiac Drift** (run-level
-decoupling with the rolling trend). The app is deliberately thin: it
+`make app` serves four Streamlit views under decision D19's cap of
+five (amended by revision v2.0): **Aerobic Efficiency** (weekly +
+28-day rolling trend, temperature-band comparison, and the D22
+pace-at-HR-band section — the same analytical question with intensity
+controlled by construction, so it lives inside this view), **Weekly
+Training** (mileage, moving time, run counts), **Cardiac Drift**
+(run-level decoupling with the rolling trend), and **Cycling
+Training** (v2.0 Phase C1: weekly ride volume with median/mean speed,
+cadence, heart-rate, and temperature context; ride validity is D25's
+data-validity rules only — no intensity gating, and heart rate is
+never required for a ride to count). The app is deliberately thin: it
 reads **only the approved mart tables** — enforced by an explicit
 table-level allow-list in the app code plus a test that pins the list's
 exact contents and refuses any other relation, core facts included
