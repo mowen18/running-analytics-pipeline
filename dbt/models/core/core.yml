@@ -238,3 +238,41 @@ models:
           a velocity median. Falling min/mi at the same band = the
           observational improvement signal.
         tests: [not_null]
+
+  - name: fct_rides
+    description: >
+      One row per D23 ride — the mart- and app-facing ride-level
+      contract (v2.0 Phase C1), a pure explicit-column projection of
+      int_ride_measures (the fct_runs pattern: computation upstream,
+      stable named surface here so marts read core only). E-bike types
+      never enter the grain; pinned by
+      assert_fct_rides_excludes_ebike_types, which renders from the
+      same ride_sport_types var as the grain filter. The D25
+      accepted_values pin for exclusion_reason lives at the computation
+      site (int_ride_measures).
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per D23 ride).
+        tests: [unique, not_null]
+      - name: week_start_date
+        description: Monday of the ride's local-calendar training week.
+        tests: [not_null]
+      - name: avg_speed_mph
+        description: Guarded derived average speed; NULL when underived.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: average_cadence_rpm
+        description: Average crank rpm (D26); NULL when the source has none.
+      - name: is_indoor
+        description: Trainer or VirtualRide — never weather-matched.
+        tests: [not_null]
+      - name: weather_available
+        description: True only for a real observation within 60 minutes.
+        tests: [not_null]
+      - name: is_valid
+        description: D25 verdict — (exclusion_reason is null).
+        tests: [not_null]
+      - name: fetched_at
+        description: Raw ingestion timestamp carried from the source row.
+        tests: [not_null]

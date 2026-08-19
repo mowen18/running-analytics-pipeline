@@ -7,9 +7,11 @@ models:
       fields typed out of the raw JSONB payload. The running-activity
       filter rule — sport_type in ('Run', 'TrailRun', 'VirtualRun') — is
       deliberately NOT applied here; it is applied (and further
-      documented) in int_runs_with_weather and fct_runs, so staging stays
-      a faithful, typed view of the source. All units carry explicit
-      suffixes (_m, _s, _bpm, _m_per_s).
+      documented) in int_runs_with_weather, and the D23 ride filter
+      (the ride_sport_types var) is likewise applied in
+      int_rides_with_weather, so staging stays a faithful, typed view
+      of the source. All units carry explicit suffixes (_m, _s, _bpm,
+      _m_per_s).
     columns:
       - name: activity_id
         description: Strava activity id.
@@ -76,6 +78,15 @@ models:
         tests:
           - accepted_range:
               arguments: {min_value: 25, max_value: 250}
+      - name: average_cadence_rpm
+        description: >
+          Average cadence when the source recorded it, else NULL — never
+          zero (D26, v2.0). Crank revolutions per minute for rides; only
+          the cycling chain consumes this column (Strava reports run
+          cadence as single-leg steps/min, a different quantity).
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 200}
       - name: is_trainer
         description: Strava trainer flag — treadmill/indoor-equipment activity.
         tests: [not_null]

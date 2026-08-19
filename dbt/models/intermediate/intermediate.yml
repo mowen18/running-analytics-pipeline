@@ -233,3 +233,80 @@ models:
                   - 'insufficient sample coverage'
                   - 'no band meets the dwell minimum'
 
+
+  - name: int_rides_with_weather
+    description: >
+      One row per D23 ride (the ride_sport_types var — e-bike types
+      never enter; same grain fct_rides inherits), joined to the
+      NEAREST qualifying hourly observation at the ride's normalized D7
+      cell, exactly as int_runs_with_weather does for runs. is_indoor
+      (trainer or VirtualRide) rides get a NULL location_key BY
+      CONSTRUCTION, so they are permanently unmatched with NULL weather
+      — deliberately stronger than the running side (v2.0 Phase C1).
+      Missing stays distinguishable from zero.
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per D23 ride).
+        tests: [unique, not_null]
+      - name: is_indoor
+        description: >
+          Trainer flag OR VirtualRide sport type. Indoor rides can
+          never weather-match (their cell is NULL by construction).
+        tests: [not_null]
+      - name: location_key
+        description: >
+          The ride's normalized ~1.1 km cell (D7); NULL for indoor
+          rides (by construction) and rides without GPS coordinates.
+      - name: weather_match_minutes
+        description: >
+          Minutes between the ride start and the matched observation
+          hour; NULL when no observation exists at the cell.
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0}
+      - name: weather_matched
+        description: True only when a qualifying observation lies within 60 minutes.
+        tests: [not_null]
+
+  - name: int_ride_measures
+    description: >
+      One row per D23 ride — the ride-level computation layer (v2.0
+      Phase C1): derived measures (distance mi, moving time, guarded
+      average speed mph re-derived from distance and time, calendar
+      fields) and the ride's D25 validity verdict. is_valid is DEFINED
+      as (exclusion_reason is null); the exclusion ladder is the single
+      encoding of the rules (first failing rule: HR sanity when HR is
+      present, speed bounds, minimum duration). HR ABSENCE is
+      deliberately not a rung — D25 requires HR only for HR-based
+      aggregates, never for the grain; HR and cadence columns simply
+      stay NULL. Invalid rides are never silently filtered. Feeds
+      fct_rides, core's explicit-column projection.
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per D23 ride).
+        tests: [unique, not_null]
+      - name: avg_speed_mph
+        description: >
+          Average moving speed re-derived as distance_mi / moving
+          hours; NULL when distance or moving time is zero — missing,
+          never zero. Sanity-bounded by the D25 ladder, not a test:
+          out-of-bounds values stay visible with their reason.
+      - name: average_cadence_rpm
+        description: Average crank rpm when the source recorded it (D26); NULL otherwise.
+      - name: is_valid
+        description: >
+          The ride counts toward weekly cycling statistics (D25
+          data-validity rules only; thresholds as dbt vars).
+        tests: [not_null]
+      - name: exclusion_reason
+        description: >
+          NULL when valid; otherwise the first failing D25 rule.
+          Threshold values are rendered from the same dbt vars the flag
+          logic uses, so reasons can never disagree with behavior.
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - 'average HR outside 90–200 bpm sanity band'
+                  - 'average speed outside 3–35 mph bounds'
+                  - 'moving time under 15 minutes'

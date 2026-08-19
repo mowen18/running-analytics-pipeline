@@ -45,6 +45,17 @@ vars:
   band_cooldown_trim_minutes: 2
   band_min_window_minutes: 10
   band_min_dwell_minutes: 5
+  # Cycling domain, Phase C1 (v2.0: D23 ride grain, D25 ride validity,
+  # D12-spirit weekly sufficiency). The Python-side twin of
+  # ride_sport_types is RIDE_SPORT_TYPES in coordinate/weather
+  # ingestion (weather deliberately excludes VirtualRide — indoor).
+  # The ride HR sanity rung reuses hr_sanity_floor/ceiling above: one
+  # mechanism, two consumers, the drift-coverage-var precedent.
+  ride_sport_types: ['Ride', 'MountainBikeRide', 'GravelRide', 'VirtualRide']
+  valid_ride_min_moving_minutes: 15
+  ride_speed_mph_floor: 3
+  ride_speed_mph_ceiling: 35
+  min_weekly_valid_rides: 2
 
 # Layers map onto the five locked schemas (D3). generate_schema_name is
 # overridden so these names are used exactly, without dbt's default
