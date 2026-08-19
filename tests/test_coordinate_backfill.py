@@ -186,26 +186,34 @@ def test_backfill_resolves_by_provenance(db, tmp_path):
     insert_run(db, 4, trainer=True)  # treadmill: skipped entirely
     insert_run(db, 5)  # transient failure: retried next run
     insert_run(db, 6, sport_type="Walk")  # not a run: ignored
+    # D23 ride types (v2.0 Phase C1) resolve by the same provenance
+    # ladder; e-bike types are never candidates.
+    insert_run(db, 7, sport_type="Ride", start_latlng=(11.11, 22.22))  # free harvest
+    insert_run(db, 8, sport_type="GravelRide")  # needs polyline decode
+    insert_run(db, 9, sport_type="EBikeRide")  # never a candidate
     db.commit()
     client = FakeDetailClient(
         {
             2: detail_with_polyline(),
             3: {"map": {"polyline": None, "summary_polyline": ""}},
             5: StravaApiError("HTTP 503 after retries"),
+            8: detail_with_polyline(),
         }
     )
 
     report = backfill_coordinates(make_settings(tmp_path), client, db)
 
-    assert (report.harvested, report.decoded, report.unavailable, report.failed) == (1, 1, 1, 1)
+    assert (report.harvested, report.decoded, report.unavailable, report.failed) == (2, 2, 1, 1)
     rows = coordinate_rows(db)
     assert rows[1][2] == "start_latlng"
     assert float(rows[2][0]) == pytest.approx(38.5)  # Google example start
     assert float(rows[2][1]) == pytest.approx(-120.2)
     assert rows[2][2] == "map_polyline"
     assert rows[3] == (None, None, "unavailable")
-    assert 4 not in rows and 6 not in rows  # never candidates
+    assert 4 not in rows and 6 not in rows and 9 not in rows  # never candidates
     assert 5 not in rows  # failed: absent row means retry next run
+    assert rows[7][2] == "start_latlng"
+    assert rows[8][2] == "map_polyline"
 
     # Second run: only the failed activity is retried, and it heals.
     healing = FakeDetailClient({5: detail_with_polyline()})
