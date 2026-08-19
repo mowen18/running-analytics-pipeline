@@ -1,9 +1,11 @@
 # Running Analytics Pipeline
 
-Incremental analytics pipeline evaluating whether aerobic running efficiency
-is improving over time, using Strava activities and historical hourly weather.
-Pipeline-first: the deliverables are ingestion, warehouse models, metrics,
-tests, and docs — the dashboard is a thin cap.
+Incremental endurance-analytics pipeline evaluating whether aerobic
+fitness is improving over time, using Strava activities and historical
+hourly weather. It began as running-only; Revision v2.0 admitted
+cycling as a peer domain with its own question, models, and marts.
+Pipeline-first: the deliverables are ingestion, warehouse models,
+metrics, tests, and docs — the dashboard is a thin cap.
 
 **Questions this answers** (that standard Strava/Apple Fitness views can't):
 
@@ -11,15 +13,19 @@ tests, and docs — the dashboard is a thin cap.
 * How does running efficiency vary under different weather conditions?
 * Is cardiac drift decreasing during longer runs?
 * How is weekly volume changing alongside these efficiency measures?
+* On fixed segments, is ride effort time at comparable heart rate
+  improving? (cycling — the data layer arrives with Phase C2)
 
-**Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions D1–D22 are
-locked; Revision v1.1 supersedes D9 and amends D15; Revision v1.2 corrects
-the dbt layering — output-invariant; Revision v1.3 makes the trend marts'
-rolling-column names static — vars change behavior, never interface;
-Revision v1.4 splits the stream fetch gate from the 45-minute analysis
-gates and adds D22, the pace-at-HR-band trend).
-**Status:** all six phases complete (Release 1.1 + presentation layer);
-revisions through v1.4 implemented and verified.
+**Full spec:** [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) (decisions
+D1–D30 are locked, revisable only by recorded addendum; the plan's
+Revisions section and [docs/decisions/](docs/decisions/) record every
+change, v1.1 through v2.0).
+**Status:** running domain complete — Phases 0–6 plus revisions through
+v1.9 implemented and verified. Cycling domain (v2.0): Phase C1 merged —
+rides core models, weekly cycling marts, and the Cycling training view,
+with running output proven byte-identical. Next: Phase C2 (segment
+efforts, completing Release 2.0), then C3 (wind-direction and headwind
+context, Release 2.1).
 
 ## Architecture
 
