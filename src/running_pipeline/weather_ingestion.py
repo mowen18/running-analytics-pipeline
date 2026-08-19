@@ -6,11 +6,12 @@ already holds, so every sync is inherently incremental and the first one
 is a natural backfill. There is no sync_state watermark; `full=True`
 re-fetches even cached hours (the archive occasionally revises data).
 
-Eligible runs are outdoor running activities: Run/TrailRun (VirtualRun is
+Eligible activities are outdoor runs and D23 rides: Run/TrailRun and
+Ride/MountainBikeRide/GravelRide (VirtualRun and VirtualRide are
 indoor), non-empty start coordinates, trainer flag not set, on or after
-the D5 historical floor. Indoor runs are excluded by design — they have
-no location, and outdoor weather would be wrong for them anyway; they are
-counted explicitly, never silently dropped.
+the D5 historical floor. Indoor activities are excluded by design — they
+have no location, and outdoor weather would be wrong for them anyway;
+they are counted explicitly, never silently dropped.
 
 Missing weather is recorded explicitly as rows with NULL measurements
 (never zero). Requests pass no `models` parameter, so the archive's
@@ -53,6 +54,12 @@ logger = logging.getLogger(__name__)
 # Outdoor-capable running sport types. VirtualRun is deliberately absent:
 # virtual runs are indoor regardless of their trainer flag.
 RUNNING_SPORT_TYPES = ("Run", "TrailRun")
+
+# Outdoor-capable D23 ride types (v2.0 Phase C1). VirtualRide is
+# deliberately absent, mirroring VirtualRun; e-bike types are not in the
+# ride grain at all (D23: motor assist breaks HR-effort comparability).
+# The dbt-side twin is the ride_sport_types var in dbt_project.yml.
+RIDE_SPORT_TYPES = ("Ride", "MountainBikeRide", "GravelRide")
 
 # Coordinates come from the payload's start_latlng OR the resolved
 # activity_coordinates row (the map-privacy polyline fallback — see
@@ -186,10 +193,13 @@ class WeatherSyncReport:
 
 
 def select_eligible_runs(conn: psycopg.Connection, sync_start_date: date) -> list[RunLocation]:
-    """Outdoor runs (per module docstring) with normalized coordinates."""
+    """Outdoor runs and rides (per module docstring) with normalized coordinates."""
     rows = conn.execute(
         _ELIGIBLE_RUNS_SQL,
-        {"running_types": list(RUNNING_SPORT_TYPES), "floor": _floor(sync_start_date)},
+        {
+            "running_types": list(RUNNING_SPORT_TYPES + RIDE_SPORT_TYPES),
+            "floor": _floor(sync_start_date),
+        },
     ).fetchall()
     return [
         RunLocation(
@@ -204,10 +214,13 @@ def select_eligible_runs(conn: psycopg.Connection, sync_start_date: date) -> lis
 
 
 def count_runs_without_location(conn: psycopg.Connection, sync_start_date: date) -> int:
-    """Runs in the window that can never get weather (indoor or no coordinates)."""
+    """Activities in the window that can never get weather (indoor or no coordinates)."""
     row = conn.execute(
         _INELIGIBLE_RUNS_SQL,
-        {"running_types": list(RUNNING_SPORT_TYPES), "floor": _floor(sync_start_date)},
+        {
+            "running_types": list(RUNNING_SPORT_TYPES + RIDE_SPORT_TYPES),
+            "floor": _floor(sync_start_date),
+        },
     ).fetchone()
     return row[0]
 

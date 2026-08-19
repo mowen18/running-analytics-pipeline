@@ -41,6 +41,10 @@ select
         when coalesce((payload ->> 'has_heartrate')::boolean, false)
             then (payload ->> 'max_heartrate')::numeric
     end                                                    as max_hr_bpm,
+    -- D26 (v2.0): cadence is first-class where the source provides it —
+    -- crank rpm for rides (only the cycling chain consumes it; Strava
+    -- reports runs as single-leg steps/min). Missing stays NULL, never 0.
+    (payload ->> 'average_cadence')::numeric               as average_cadence_rpm,
     coalesce((payload ->> 'trainer')::boolean, false)      as is_trainer,
     coalesce(
         coordinates.latitude,

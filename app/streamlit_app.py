@@ -1,5 +1,5 @@
-"""Thin presentation layer: exactly three views (D19), reading ONLY the
-approved mart tables. No business logic here — every
+"""Thin presentation layer: four views under D19's cap of five (amended
+v2.0), reading ONLY the approved mart tables. No business logic here — every
 metric, threshold, flag, and exclusion is computed in dbt; this file
 selects, charts, and explains. Sample counts and data sufficiency are
 always visible, missing data is explained rather than hidden, and all
@@ -59,8 +59,10 @@ def week_axis(week_dates) -> alt.Axis:
 # contents and asserts everything off the list is refused.
 # mart_band_weekly is deliberately absent: the weekly band statistics
 # travel inside mart_band_trend (v1.4); mart_run_band_segments is the
-# band chart's run-level scatter (v1.6). Each revision grows the list
-# by exactly one name, proven red first.
+# band chart's run-level scatter (v1.6). Every addition is proven red
+# first — one name per revision through v1.6, then exactly the two
+# cycling marts in v2.0 Phase C1 (amended D19 names all three; the
+# third arrives with Phase C2).
 ANALYTICS_TABLES = (
     "mart_weekly_training",
     "mart_efficiency_trend",
@@ -70,6 +72,8 @@ ANALYTICS_TABLES = (
     "mart_drift_trend",
     "mart_band_trend",
     "mart_run_band_segments",
+    "mart_weekly_cycling",
+    "mart_ride_quality",
 )
 
 OBSERVATIONAL_NOTE = (
@@ -692,6 +696,128 @@ def drift_view():
     st.caption("All drift weeks with sample counts; insufficient weeks are flagged, not deleted.")
 
 
+# ── View 4: Cycling Training (v2.0 Phase C1) ──────────────────────────
+
+CYCLING_WEEKLY_COLUMNS = {
+    "week_start_date": st.column_config.DateColumn("Week", format="MMM D"),
+    "ride_count": st.column_config.NumberColumn("Rides"),
+    "valid_ride_count": st.column_config.NumberColumn("Valid (n)"),
+    "total_distance_mi": st.column_config.NumberColumn("Miles", format="%.1f"),
+    "total_moving_time_min": st.column_config.NumberColumn("Moving (min)", format="%.0f"),
+    "total_elevation_gain_m": st.column_config.NumberColumn("Elev gain (m)", format="%.0f"),
+    "median_speed_mph": st.column_config.NumberColumn("Median mph", format="%.1f"),
+    "mean_speed_mph": st.column_config.NumberColumn("Mean mph", format="%.1f"),
+    "avg_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
+    "valid_rides_with_hr": st.column_config.NumberColumn("With HR (n)"),
+    "avg_cadence_rpm": st.column_config.NumberColumn("Avg cadence (rpm)", format="%.0f"),
+    "rides_with_cadence": st.column_config.NumberColumn("With cadence (n)"),
+    "avg_temperature_f": st.column_config.NumberColumn("Avg air °F", format="%.1f"),
+    "avg_relative_humidity_pct": st.column_config.NumberColumn("Avg RH %", format="%.0f"),
+    "valid_rides_with_weather": st.column_config.NumberColumn("Valid w/ weather (n)"),
+    "is_sufficient": st.column_config.CheckboxColumn("Sufficient"),
+}
+
+RIDE_QUALITY_DISPLAY = [
+    "start_date_local",
+    "activity_name",
+    "sport_type",
+    "is_indoor",
+    "distance_mi",
+    "moving_time_min",
+    "avg_speed_mph",
+    "average_hr_bpm",
+    "average_cadence_rpm",
+    "is_valid",
+    "exclusion_reason",
+    "temperature_band_label",
+    "apparent_temperature_f",
+    "temperature_f",
+]
+
+RIDE_QUALITY_COLUMNS = {
+    "start_date_local": st.column_config.DateColumn("Ride", format="MMM D"),
+    "activity_name": st.column_config.TextColumn("Name"),
+    "sport_type": st.column_config.TextColumn("Type"),
+    "is_indoor": st.column_config.CheckboxColumn("Indoor"),
+    "distance_mi": st.column_config.NumberColumn("Miles", format="%.1f"),
+    "moving_time_min": st.column_config.NumberColumn("Moving (min)", format="%.1f"),
+    "avg_speed_mph": st.column_config.NumberColumn("Avg mph", format="%.1f"),
+    "average_hr_bpm": st.column_config.NumberColumn("Avg HR", format="%.0f"),
+    "average_cadence_rpm": st.column_config.NumberColumn("Cadence (rpm)", format="%.0f"),
+    "is_valid": st.column_config.CheckboxColumn("Valid"),
+    "exclusion_reason": st.column_config.TextColumn("Exclusion reason"),
+    "temperature_band_label": st.column_config.TextColumn("Temp band"),
+    "apparent_temperature_f": st.column_config.NumberColumn("Feels-like °F", format="%.1f"),
+    "temperature_f": st.column_config.NumberColumn("Air °F", format="%.1f"),
+}
+
+
+def cycling_view():
+    st.header("Cycling training")
+    st.caption(
+        "Weekly cycling volume with speed, cadence, heart-rate, and "
+        "temperature context. Ride validity (D25) uses data-validity rules "
+        "only — no intensity gating, and heart rate is required only for "
+        "HR columns, never for a ride to count."
+    )
+
+    weekly = load("mart_weekly_cycling")
+    if weekly.empty:
+        st.info("No cycling weeks yet — run `make sync-activities` then `make dbt-build`.")
+        return
+
+    total_mi = weekly["total_distance_mi"].sum()
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total miles", f"{total_mi:,.1f}")
+    col2.metric("Rides", int(weekly["ride_count"].sum()))
+    col3.metric("Valid rides", int(weekly["valid_ride_count"].sum()))
+    col4.metric("Rides with cadence", int(weekly["rides_with_cadence"].sum()))
+
+    mileage = (
+        alt.Chart(weekly)
+        .mark_bar(size=24, color=BLUE, cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+        .encode(
+            x=alt.X(
+                "week_start_date:T",
+                title="training week",
+                axis=week_axis(weekly["week_start_date"]),
+                scale=TIME_X_SCALE,
+            ),
+            y=alt.Y("total_distance_mi:Q", title="miles"),
+            tooltip=[
+                alt.Tooltip("week_start_date:T", title="week", format="%b %d"),
+                alt.Tooltip("total_distance_mi:Q", title="miles", format=".1f"),
+                alt.Tooltip("total_moving_time_min:Q", title="moving min", format=".0f"),
+                alt.Tooltip("ride_count:Q", title="rides (n)"),
+            ],
+        )
+        .properties(height=300)
+    )
+    st.altair_chart(themed(mileage), width="stretch")
+
+    st.dataframe(weekly, width="stretch", hide_index=True, column_config=CYCLING_WEEKLY_COLUMNS)
+    st.caption(
+        "Volume counts every D23 ride; speed, HR, cadence, and weather "
+        "columns aggregate valid rides only and stay empty (never zero) "
+        "without them. A week is sufficient at ≥ 2 valid rides."
+    )
+
+    st.subheader("Ride eligibility")
+    quality = load("mart_ride_quality")
+    st.dataframe(
+        quality[RIDE_QUALITY_DISPLAY],
+        width="stretch",
+        hide_index=True,
+        column_config=RIDE_QUALITY_COLUMNS,
+    )
+    st.caption(
+        "Every ride is visible: invalid rides carry the first failing D25 "
+        "rule, never a silent filter. Cadence is crank rpm where a sensor "
+        "recorded it — missing stays blank, never zero. Indoor rides "
+        "(trainer or virtual) are never weather-matched."
+    )
+
+
 # ── Shell ─────────────────────────────────────────────────────────────
 
 
@@ -702,6 +828,7 @@ def main():
         "Aerobic efficiency": efficiency_view,
         "Weekly training": weekly_view,
         "Cardiac drift": drift_view,
+        "Cycling training": cycling_view,
     }
     choice = st.sidebar.radio("View", list(views))
     st.sidebar.caption(

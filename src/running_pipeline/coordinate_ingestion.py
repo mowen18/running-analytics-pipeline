@@ -1,9 +1,9 @@
-"""Run-start coordinate resolution (raw_strava.activity_coordinates).
+"""Activity-start coordinate resolution (raw_strava.activity_coordinates).
 
 The map-privacy workaround: when Strava's "hide entire map" setting
 strips start_latlng from API payloads, the activity DETAIL endpoint
-still carries the encoded route polyline, whose first point is the run
-start. Resolution order per running activity:
+still carries the encoded route polyline, whose first point is the
+activity start. Resolution order per running or D23 ride activity:
 
 1. payload start_latlng, when present  -> source 'start_latlng' (free)
 2. detail map.polyline first point     -> source 'map_polyline' (1 call)
@@ -28,6 +28,12 @@ from running_pipeline.strava_client import RateLimitStop, StravaApiError, Strava
 logger = logging.getLogger(__name__)
 
 RUNNING_SPORT_TYPES = ("Run", "TrailRun", "VirtualRun")
+
+# D23 ride types (v2.0 Phase C1). VirtualRide is included here the way
+# VirtualRun is — a virtual activity may still carry a route — while
+# weather eligibility is the layer that treats virtual as indoor. E-bike
+# types are outside the ride grain entirely (D23).
+RIDE_SPORT_TYPES = ("Ride", "MountainBikeRide", "GravelRide", "VirtualRide")
 
 # Resolution 1: coordinates already in the stored payload — pure SQL,
 # no API calls, idempotent via the anti-join.
@@ -92,7 +98,8 @@ def backfill_coordinates(
     report = CoordinateBackfillReport()
 
     report.harvested = conn.execute(
-        _HARVEST_SQL, {"running_types": list(RUNNING_SPORT_TYPES), "floor": floor}
+        _HARVEST_SQL,
+        {"running_types": list(RUNNING_SPORT_TYPES + RIDE_SPORT_TYPES), "floor": floor},
     ).rowcount
     conn.commit()
 
@@ -101,7 +108,7 @@ def backfill_coordinates(
         for row in conn.execute(
             _CANDIDATES_SQL,
             {
-                "running_types": list(RUNNING_SPORT_TYPES),
+                "running_types": list(RUNNING_SPORT_TYPES + RIDE_SPORT_TYPES),
                 "floor": floor,
                 "cap": settings.coordinate_max_activities_per_run,
             },

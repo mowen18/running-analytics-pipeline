@@ -324,12 +324,22 @@ def test_extraction_keeps_outdoor_runs_and_excludes_the_rest(db):
         "INSERT INTO raw_strava.activity_coordinates VALUES "
         "(8, 22.446, 33.786, 'map_polyline', now())"
     )
+    # D23 ride types (v2.0 Phase C1): outdoor rides are weather-eligible;
+    # VirtualRide is indoor by type (mirrors VirtualRun), trainer rides
+    # and e-bike types stay out. Distinct starts, same flake rule.
+    insert_activity(db, 9, sport_type="Ride", start="2026-06-17T08:00:00Z")  # kept
+    insert_activity(db, 10, sport_type="GravelRide", start="2026-06-17T09:00:00Z")  # kept
+    insert_activity(db, 11, sport_type="MountainBikeRide", start="2026-06-17T10:00:00Z")  # kept
+    insert_activity(db, 12, sport_type="VirtualRide", start="2026-06-17T11:00:00Z")  # excluded
+    # Trainer ride — excluded.
+    insert_activity(db, 13, sport_type="Ride", trainer=True, start="2026-06-17T12:00:00Z")
+    insert_activity(db, 14, sport_type="EBikeRide", start="2026-06-17T13:00:00Z")  # excluded
     db.commit()
 
     runs = select_eligible_runs(db, SYNC_START)
 
-    assert [run.activity_id for run in runs] == [1, 2, 8]
-    resolved = runs[-1]
+    assert [run.activity_id for run in runs] == [1, 2, 8, 9, 10, 11]
+    resolved = runs[2]  # activity 8, the map-privacy resolved row
     assert resolved.location_key == "22.45_33.79"  # D7-normalized from the resolved row
 
 
@@ -347,15 +357,22 @@ def test_extraction_normalizes_coordinates_and_truncates_to_hour(db):
 
 
 @pytest.mark.integration
-def test_ineligible_count_covers_indoor_and_coordless_runs_only(db):
+def test_ineligible_count_covers_indoor_and_coordless_activities_only(db):
     insert_activity(db, 1)  # eligible — not counted
     insert_activity(db, 2, trainer=True)  # counted
     insert_activity(db, 3, start_latlng=None)  # counted
     insert_activity(db, 4, sport_type="Walk", trainer=True)  # not a run — not counted
     insert_activity(db, 5, trainer=True, start="2023-06-01T08:00:00Z")  # pre-floor
+    # D23 rides follow the same buckets: trainer/coordless counted,
+    # VirtualRide and e-bike types outside the population entirely
+    # (neither eligible nor counted — the VirtualRun/Walk behavior).
+    insert_activity(db, 6, sport_type="Ride", trainer=True)  # counted
+    insert_activity(db, 7, sport_type="GravelRide", start_latlng=None)  # counted
+    insert_activity(db, 8, sport_type="VirtualRide")  # not counted
+    insert_activity(db, 9, sport_type="EBikeRide")  # not counted
     db.commit()
 
-    assert count_runs_without_location(db, SYNC_START) == 2
+    assert count_runs_without_location(db, SYNC_START) == 4
 
 
 # Criteria 1 + 2: every eligible run has a matching or explicitly-missing

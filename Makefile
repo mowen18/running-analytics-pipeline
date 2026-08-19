@@ -55,10 +55,10 @@ sync-activities:   ## incremental Strava activity sync (14-day overlap window)
 reconcile:     ## full reconciliation: re-fetch everything from SYNC_START_DATE
 	$(VENV)/running-pipeline sync-activities --full
 
-backfill-coordinates:  ## resolve run-start coordinates (payload, else detail polyline)
+backfill-coordinates:  ## resolve activity-start coordinates (payload, else detail polyline)
 	$(VENV)/running-pipeline backfill-coordinates
 
-sync-weather:  ## fetch hourly weather for outdoor runs not yet covered
+sync-weather:  ## fetch hourly weather for outdoor runs and rides not yet covered
 	$(VENV)/running-pipeline sync-weather
 
 reconcile-weather:  ## re-fetch weather even for already-cached hours
@@ -86,7 +86,7 @@ dbt-dag: dbt-profile       ## regenerate manifest and embed the dbt DAG in READM
 	$(DBT) parse --profiles-dir .
 	$(VENV)/python -m running_pipeline.dbt_dag --update-readme
 
-app:           ## launch the Streamlit dashboard (three views, marts only)
+app:           ## launch the Streamlit dashboard (four views, marts only)
 	$(VENV)/streamlit run app/streamlit_app.py
 
 airflow-install:   ## create ~/.venvs/airflow + apache-airflow (official constraints)

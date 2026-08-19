@@ -76,6 +76,7 @@ def insert_activity(
     moving_time=3000,
     elapsed_time=3100,
     average_heartrate=None,
+    average_cadence=None,
     workout_type=None,
 ):
     payload = {
@@ -94,6 +95,7 @@ def insert_activity(
         "average_speed": distance / moving_time if moving_time else 0,
         "has_heartrate": average_heartrate is not None,
         "average_heartrate": average_heartrate,
+        "average_cadence": average_cadence,
         "workout_type": workout_type,
     }
     conn.execute(
@@ -875,3 +877,183 @@ def test_band_medians_dwell_and_exclusion_ladder(db):
     assert quality[4] == "streams not yet loaded"
     assert quality[1] is None  # analyzed
     assert quality[11] is None  # not a band candidate at all
+
+
+# ── Cycling domain (v2.0 Phase C1): D23 grain, D25 ladder, weekly marts ─
+
+
+def outdoor_ride(
+    db,
+    activity_id,
+    *,
+    day,
+    sport_type="Ride",
+    hr=None,
+    cadence=None,
+    cell="12.34_-56.78",
+    temp_c=None,
+    trainer=False,
+    distance=32000.0,
+    moving_time=7200,
+):
+    """A ride fixture, optionally with a matching observation at its cell.
+
+    Defaults: 32 km in 2 h -> 9.9 mph, inside the D25 3-35 mph bounds.
+    One fixture per day keeps starts distinct (the ordering-flake rule)
+    and pins the training week via start_date_local.
+    """
+    lat, lon = (float(part) for part in cell.split("_"))
+    insert_activity(
+        db,
+        activity_id,
+        sport_type=sport_type,
+        start=f"{day}T09:15:00Z",
+        start_local=f"{day}T04:15:00Z",
+        start_latlng=(lat, lon),
+        trainer=trainer,
+        distance=distance,
+        moving_time=moving_time,
+        elapsed_time=moving_time + 100,
+        average_heartrate=hr,
+        average_cadence=cadence,
+    )
+    if temp_c is not None:
+        insert_weather(db, hour=f"{day}T09:00:00+00:00", temperature=temp_c, location=cell)
+
+
+@pytest.mark.integration
+def test_ride_grain_indoor_flags_and_ebike_absence(db):
+    # C1 acceptance criterion 2: one row per D23 ride, e-bike types
+    # absent, indoor flagged. Indoor rides get a matching observation at
+    # their cell ON PURPOSE: weather_available must still be false (the
+    # forced-NULL location_key, stronger than the running side).
+    outdoor_ride(db, 101, day="2026-06-15", hr=140, cadence=85, temp_c=15.0)
+    outdoor_ride(db, 102, day="2026-06-16", sport_type="GravelRide", cell="55.00_66.00")
+    outdoor_ride(db, 103, day="2026-06-17", sport_type="MountainBikeRide")
+    outdoor_ride(
+        db, 104, day="2026-06-18", sport_type="VirtualRide", cell="21.00_-43.00", temp_c=16.0
+    )
+    outdoor_ride(db, 105, day="2026-06-19", trainer=True, cell="22.00_-44.00", temp_c=17.0)
+    outdoor_ride(db, 106, day="2026-06-20", sport_type="EBikeRide")
+    insert_activity(
+        db,
+        107,
+        start="2026-06-21T09:15:00Z",
+        start_local="2026-06-21T04:15:00Z",
+        average_heartrate=140,
+    )
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    rides = {
+        row[0]: row[1:]
+        for row in db.execute(
+            "SELECT activity_id, sport_type, is_indoor, weather_available,"
+            "       average_cadence_rpm FROM analytics.fct_rides"
+        ).fetchall()
+    }
+    assert set(rides) == {101, 102, 103, 104, 105}  # e-bike and Run absent
+    assert rides[101] == ("Ride", False, True, Decimal("85"))
+    assert rides[102][1] is False and rides[102][3] is None  # cadence NULL, never 0
+    assert rides[104][1] is True and rides[104][2] is False  # virtual: indoor, unmatched
+    assert rides[105][1] is True and rides[105][2] is False  # trainer: indoor, unmatched
+
+    run_rows = db.execute("SELECT activity_id FROM analytics.fct_runs").fetchall()
+    assert [row[0] for row in run_rows] == [107]  # rides never leak into the running grain
+
+    labels = {
+        row[0]: row[1]
+        for row in db.execute(
+            "SELECT activity_id, temperature_band_label FROM analytics.mart_ride_quality"
+        ).fetchall()
+    }
+    assert labels[101] == "50–70°F"  # 15 °C -> 59 °F feels-like, seed band
+    assert labels[102] == "weather unavailable"
+    assert labels[104] == "indoor"
+    assert labels[105] == "indoor"
+
+
+@pytest.mark.integration
+def test_ride_exclusion_ladder_first_failing_rule(db):
+    # C1 acceptance criterion 3: every invalid ride carries the first
+    # failing D25 rule; HR absence is NOT an exclusion (unlike running).
+    outdoor_ride(db, 111, day="2026-06-15", hr=140)  # valid baseline
+    # HR out of sanity AND speed out of bounds: the HR rung fires first.
+    outdoor_ride(db, 112, day="2026-06-16", hr=210, moving_time=1800)
+    outdoor_ride(db, 113, day="2026-06-17", hr=140, distance=48000.0, moving_time=2700)  # 39.8 mph
+    outdoor_ride(db, 114, day="2026-06-18", hr=140, distance=0.0, moving_time=3600)  # speed NULL
+    outdoor_ride(db, 115, day="2026-06-19", hr=140, distance=4023.36, moving_time=600)  # 10 min
+    outdoor_ride(db, 116, day="2026-06-20")  # no HR: still valid
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    rows = {
+        row[0]: (row[1], row[2])
+        for row in db.execute(
+            "SELECT activity_id, is_valid, exclusion_reason FROM analytics.fct_rides"
+        ).fetchall()
+    }
+    assert rows[111] == (True, None)
+    assert rows[112] == (False, "average HR outside 90–200 bpm sanity band")
+    assert rows[113] == (False, "average speed outside 3–35 mph bounds")
+    assert rows[114] == (False, "average speed outside 3–35 mph bounds")
+    assert rows[115] == (False, "moving time under 15 minutes")
+    assert rows[116] == (True, None)  # HR required only for HR aggregates
+    assert all(valid == (reason is None) for valid, reason in rows.values())
+
+
+@pytest.mark.integration
+def test_weekly_cycling_sufficiency_flips_at_threshold(db):
+    # C1 acceptance criterion 4: is_sufficient flips exactly at the
+    # min_weekly_valid_rides threshold (2), counting VALID rides only.
+    outdoor_ride(db, 121, day="2026-06-15", hr=140, cadence=90)  # week A, valid
+    outdoor_ride(db, 122, day="2026-06-16", hr=145, cadence=80)  # week A, valid
+    outdoor_ride(db, 123, day="2026-06-22", hr=140)  # week B, valid, no cadence
+    outdoor_ride(db, 124, day="2026-06-23", hr=140, distance=4023.36, moving_time=600)  # invalid
+    db.commit()
+
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    weeks = {
+        row[0]: row[1:]
+        for row in db.execute(
+            "SELECT week_start_date::text, ride_count, valid_ride_count,"
+            "       is_sufficient, avg_cadence_rpm, rides_with_cadence"
+            "  FROM analytics.mart_weekly_cycling"
+        ).fetchall()
+    }
+    assert weeks["2026-06-15"] == (2, 2, True, Decimal("85"), 2)
+    # Two rides but only one valid: below the threshold, and the cadence
+    # average is NULL — never zero — when no valid ride carries cadence.
+    assert weeks["2026-06-22"] == (2, 1, False, None, 0)
+
+
+@pytest.mark.integration
+def test_ebike_pin_test_fails_on_injected_ebike_row(db):
+    # The D23 e-bike pin, proven red the injection way (the orphan
+    # pattern above): the grain filter renders from ride_sport_types, so
+    # no raw fixture can put an e-bike row into fct_rides — it must be
+    # injected into the built table.
+    result = run_dbt("build")
+    assert result.returncode == 0, f"dbt build failed:\n{result.stdout}"
+
+    db.execute(
+        "INSERT INTO analytics.fct_rides (activity_id, sport_type) VALUES (999999999, 'EBikeRide')"
+    )
+    db.commit()
+
+    selector = "assert_fct_rides_excludes_ebike_types"
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode != 0, "e-bike pin should fail on an injected e-bike row"
+    assert selector in result.stdout
+
+    db.execute("DELETE FROM analytics.fct_rides WHERE activity_id = 999999999")
+    db.commit()
+
+    result = run_dbt("test", "--select", selector)
+    assert result.returncode == 0, f"e-bike pin still failing:\n{result.stdout}"

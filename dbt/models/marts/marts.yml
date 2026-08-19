@@ -416,3 +416,62 @@ models:
           Capped dwell in this band in minutes (core enforces the
           5-minute D22 floor in seconds).
         tests: [not_null]
+
+  - name: mart_weekly_cycling
+    description: >
+      One row per cycling training week (v2.0 Phase C1): volume over
+      ALL D23 rides (counts, mileage, moving time, elevation) and
+      statistics over VALID rides only (D25). Median speed is primary,
+      mean secondary (the D11 discipline). HR and cadence averages
+      cover only valid rides carrying that field (D25/D26), each with
+      its published sample count; weather context covers valid
+      weather-matched rides. Every statistic is NULL — never zero —
+      for a week with no qualifying ride. is_sufficient applies the
+      D12-spirit threshold (min_weekly_valid_rides), guarded by
+      assert_cycling_sufficiency_flag_matches_threshold.
+    columns:
+      - name: week_start_date
+        description: Monday of the local-calendar training week.
+        tests: [unique, not_null]
+      - name: ride_count
+        description: All D23 rides that week, valid or not.
+        tests: [not_null]
+      - name: valid_ride_count
+        description: Rides passing the D25 validity rules.
+        tests: [not_null]
+      - name: median_speed_mph
+        description: Median average-speed across valid rides; NULL when none.
+      - name: avg_cadence_rpm
+        description: >
+          Mean crank rpm across valid cadence-carrying rides
+          (rides_with_cadence is its sample size); NULL when none.
+      - name: is_sufficient
+        description: valid_ride_count meets the min_weekly_valid_rides var.
+        tests: [not_null]
+
+  - name: mart_ride_quality
+    description: >
+      One row per D23 ride with its measures, D25 validity verdict, and
+      weather context — the mart_run_quality mirror for cycling (v2.0
+      Phase C1). Answers "why didn't ride X count?" reading only core
+      and the D14 seed. temperature_band_label uses the shared
+      vocabulary: indoor (trainer or VirtualRide) / a D14 band assigned
+      by apparent temperature (v1.7) / weather unavailable. No drift or
+      band columns: those analyses are running-only (ride drift is
+      deferred — coasting breaks the D16 halves comparison).
+    columns:
+      - name: activity_id
+        description: Strava activity id (one row per D23 ride).
+        tests: [unique, not_null]
+      - name: is_valid
+        description: D25 verdict — (exclusion_reason is null).
+        tests: [not_null]
+      - name: exclusion_reason
+        description: >
+          NULL when valid; otherwise the first failing D25 rule (pinned
+          at the computation site, int_ride_measures).
+      - name: temperature_band_label
+        description: >
+          indoor / a D14 seed band label (by apparent temperature) /
+          weather unavailable — always present.
+        tests: [not_null]
