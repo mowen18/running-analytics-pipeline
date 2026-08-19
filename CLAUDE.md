@@ -272,3 +272,22 @@ When a request has material ambiguity:
 
 Prefer the smallest relevant file search and targeted test. Do not perform
 adjacent refactoring unless explicitly requested.
+
+## Scope constraints — Cycling domain (v2.0)
+- Running output is byte-identical: no running model, mart, view, or
+  test changes in any C-phase. D15 is untouched — no ride streams.
+- No power fields modeled while `device_watts` is false — estimated
+  watts/kilojoules live in raw JSONB only (D27).
+- Ride grain excludes `EBikeRide`/`EMountainBikeRide`; `VirtualRide`
+  is indoor-flagged and its segment efforts never reach marts (D23,
+  D28).
+- Segment views must name their improvement over the Strava screen
+  (reworded non-goal); plain replication stays out.
+- Detail fetches keep the batch cap and the exit-3 rate-limit
+  contract; status rows are the resumability mechanism.
+- Wind direction uses the meteorological FROM convention; 0° = north
+  is a value, missing is NULL, never zero. Headwind sign is pinned:
+  positive = headwind (D30). Winding and short-segment flags are
+  displayed, never filters.
+- App cap is now 5; allow-list additions are exactly the three named
+  marts, each proven red first; C3 adds none (amended D19).
