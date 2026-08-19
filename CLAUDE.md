@@ -109,7 +109,7 @@
   declaration — the boundary fixtures (80.0/90.0/95.0) extend an
   already-green partition test. Addendum:
   docs/decisions/v1.8-five-band-recalibration.md.
-- Current phase: v1.9 merged to main (2026-07-23), docs-only.
+- Revision v1.9 merged to main (2026-07-23), docs-only.
   PROJECT_PLAN.md §3's single "Explicitly Out of Scope" list split
   into "Non-Goals (this project's thesis)" (Strava-screen
   replication, ML performance/race-time prediction, mobile
@@ -125,6 +125,38 @@
   webhook/FastAPI extension surfaced the ambiguity but is NOT
   admitted by v1.9 — it still needs its own addendum. Addendum:
   docs/decisions/v1.9-scope-taxonomy.md.
+- Revision v2.0 adopted 2026-08-19: cycling admitted as a peer domain
+  (purpose-level revision — it touches the non-goals list, hence
+  major version). New decisions D23–D30; D8 amended (wind direction,
+  Phase C3) and D19 amended (view cap 5; allow-list grows by exactly
+  three named marts across C1–C2, red-first). Phases C1–C3 added
+  (C1+C2 = Release 2.0, C3 = Release 2.1). Hard promise: running
+  output byte-identical in every C-phase. See "Scope constraints —
+  Cycling domain (v2.0)" below. Addendum:
+  docs/decisions/v2.0-cycling-domain.md.
+- Current phase: Phase C1 merged to main (2026-08-19) — Release 2.0
+  begins. Coordinate/weather eligibility extended to D23 ride types
+  (RIDE_SPORT_TYPES beside RUNNING_SPORT_TYPES in
+  coordinate/weather_ingestion; weather excludes VirtualRide,
+  mirroring VirtualRun; trainer predicate unchanged). New chain
+  int_rides_with_weather → int_ride_measures → fct_rides →
+  {mart_weekly_cycling, mart_ride_quality}. D25 ladder single-encoded
+  in int_ride_measures (HR-outside-sanity-when-present → speed
+  outside 3–35 mph → under 15 min; HR absence NEVER excludes — it
+  gates only HR aggregates); is_indoor := is_trainer or VirtualRide
+  forces location_key NULL (indoor rides permanently weatherless —
+  stronger than the running side); average_cadence_rpm staged per
+  D26 (crank rpm, cycling-chain-only consumer). New vars:
+  ride_sport_types, valid_ride_min_moving_minutes,
+  ride_speed_mph_floor/_ceiling, min_weekly_valid_rides; hr_sanity
+  vars reused (one mechanism, two consumers). App: fourth view
+  "Cycling training"; allow-list +2 (each proven red first); e-bike
+  absence pinned by the var-rendered
+  assert_fct_rides_excludes_ebike_types (red-proven by injection).
+  Running output proven byte-identical: 13-relation ordered-CSV
+  snapshot diffed interim (post-sync, pre-dbt) and final — both
+  empty; ride weather sync inserted 624 rows, updated 0. C2 (segment
+  efforts) NOT started.
 
 ## Scope constraints — Airflow adoption (v1.5)
 - (a) Airflow owns no state — watermarks, per-item status rows, and
@@ -184,7 +216,8 @@
   the example, reads .env; metric thresholds are dbt vars in
   dbt_project.yml; layers map to the D3 schemas via the
   generate_schema_name override — do not remove it)
-- App:     `make app` (Streamlit, three views per D19) / `make all`
+- App:     `make app` (Streamlit, four views under D19's amended cap
+  of five) / `make all`
   (every sync + dbt build)
 - Airflow: `make airflow-install` (separate venv at ~/.venvs/airflow —
   never the project venv) / `make airflow-start` (airflow standalone,
